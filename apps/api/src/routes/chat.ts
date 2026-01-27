@@ -48,7 +48,8 @@ router.get(
   validateQuery(conversationQuerySchema),
   async (req: AuthRequest, res) => {
     try {
-      const { limit, offset } = req.query as { limit: number; offset: number };
+      const limit = Number(req.query.limit) || 20;
+      const offset = Number(req.query.offset) || 0;
       
       const { data, error, count } = await supabaseAdmin
         .from('conversation_participants')
@@ -198,7 +199,8 @@ router.get(
   async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const { limit, before } = req.query as { limit: number; before?: string };
+      const limit = Number(req.query.limit) || 50;
+      const before = req.query.before as string | undefined;
       
       // Verify user is participant
       const { data: participant } = await supabaseAdmin

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Button } from 'react-bootstrap';
 import { FaBell } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
