@@ -11,6 +11,7 @@ import chatRoutes from './routes/chat.js';
 import forumRoutes from './routes/forum.js';
 import moderationRoutes from './routes/moderation.js';
 import notificationsRoutes from './routes/notifications.js';
+import usersRoutes from './routes/users.js';
 
 const app = express();
 
@@ -82,6 +83,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/forum', forumRoutes);
 app.use('/api/moderation', moderationRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/users', usersRoutes);
 
 // =====================================================
 // ERROR HANDLING

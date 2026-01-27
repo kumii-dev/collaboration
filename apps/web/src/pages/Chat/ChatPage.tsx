@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { Form, Button, ListGroup, Badge, Spinner } from 'react-bootstrap';
-import { FiSend, FiPaperclip, FiSmile, FiMoreVertical } from 'react-icons/fi';
+import { Form, Button, ListGroup, Badge, Spinner, Modal } from 'react-bootstrap';
+import { FiSend, FiPaperclip, FiSmile, FiMoreVertical, FiSearch } from 'react-icons/fi';
 import { format } from 'date-fns';
 import api from '../../lib/api';
 import { supabase } from '../../lib/supabase';
@@ -42,6 +42,9 @@ export default function ChatPage() {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [messageText, setMessageText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -90,6 +93,45 @@ export default function ChatPage() {
       }
     }
   );
+
+  // Search users query
+  const { data: users, isLoading: searchingUsers } = useQuery(
+    ['users', userSearch],
+    async () => {
+      if (!userSearch || userSearch.length < 2) return [];
+      const response = await api.get('/users/search', {
+        params: { q: userSearch }
+      });
+      return response.data.data;
+    },
+    { enabled: userSearch.length >= 2 }
+  );
+
+  // Create conversation mutation
+  const createConversationMutation = useMutation(
+    async (participantId: string) => {
+      const response = await api.post('/chat/conversations', {
+        participantIds: [participantId],
+        type: 'direct'
+      });
+      return response.data.data.conversation;
+    },
+    {
+      onSuccess: (conversation) => {
+        queryClient.invalidateQueries('conversations');
+        setShowNewChatModal(false);
+        setUserSearch('');
+        setSelectedUser(null);
+        setSelectedConversation(conversation.id);
+      }
+    }
+  );
+
+  const handleCreateConversation = () => {
+    if (selectedUser) {
+      createConversationMutation.mutate(selectedUser);
+    }
+  };
 
   // Subscribe to realtime updates
   useEffect(() => {
@@ -156,7 +198,7 @@ export default function ChatPage() {
         <div className="col-md-4 border-end">
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
             <h5 className="mb-0">Messages</h5>
-            <Button variant="primary" size="sm">
+            <Button variant="primary" size="sm" onClick={() => setShowNewChatModal(true)}>
               New Chat
             </Button>
           </div>
@@ -351,6 +393,91 @@ export default function ChatPage() {
           )}
         </div>
       </div>
+
+      {/* New Chat Modal */}
+      <Modal show={showNewChatModal} onHide={() => setShowNewChatModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Start New Conversation</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form.Group className="mb-3">
+            <Form.Label>Search for a user</Form.Label>
+            <div className="position-relative">
+              <FiSearch 
+                className="position-absolute top-50 start-0 translate-middle-y ms-3 text-muted" 
+                size={18}
+              />
+              <Form.Control
+                type="text"
+                placeholder="Type name or email..."
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                style={{ paddingLeft: '2.5rem' }}
+                autoFocus
+              />
+            </div>
+          </Form.Group>
+
+          {userSearch.length < 2 && (
+            <div className="text-center text-muted py-3">
+              <small>Type at least 2 characters to search</small>
+            </div>
+          )}
+
+          {searchingUsers && (
+            <div className="text-center py-3">
+              <Spinner animation="border" size="sm" />
+            </div>
+          )}
+
+          {userSearch.length >= 2 && !searchingUsers && users && users.length === 0 && (
+            <div className="text-center text-muted py-3">
+              <small>No users found</small>
+            </div>
+          )}
+
+          {users && users.length > 0 && (
+            <ListGroup>
+              {users.map((user: any) => (
+                <ListGroup.Item
+                  key={user.id}
+                  action
+                  active={selectedUser === user.id}
+                  onClick={() => setSelectedUser(user.id)}
+                  className="d-flex align-items-center"
+                >
+                  <div className="avatar-placeholder me-3">
+                    {user.full_name?.charAt(0) || '?'}
+                  </div>
+                  <div>
+                    <div className="fw-medium">{user.full_name || 'Unknown User'}</div>
+                    <small className="text-muted">{user.email}</small>
+                  </div>
+                </ListGroup.Item>
+              ))}
+            </ListGroup>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowNewChatModal(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleCreateConversation}
+            disabled={!selectedUser || createConversationMutation.isLoading}
+          >
+            {createConversationMutation.isLoading ? (
+              <>
+                <Spinner animation="border" size="sm" className="me-2" />
+                Starting...
+              </>
+            ) : (
+              'Start Conversation'
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }
