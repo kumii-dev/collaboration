@@ -11,8 +11,10 @@ import MainLayout from './components/layouts/MainLayout';
 import LoginPage from './pages/Auth/LoginPage';
 import ChatPage from './pages/Chat/ChatPage';
 import ForumPage from './pages/Forum/ForumPage';
+import ThreadDetailPage from './pages/Forum/ThreadDetailPage';
 import ModerationPage from './pages/Moderation/ModerationPage';
 import ProfilePage from './pages/Profile/ProfilePage';
+import NotificationsPage from './pages/Notifications/NotificationsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,9 +71,11 @@ function App() {
           >
             <Route index element={<Navigate to="/chat" />} />
             <Route path="chat/*" element={<ChatPage />} />
-            <Route path="forum/*" element={<ForumPage />} />
+            <Route path="forum" element={<ForumPage />} />
+            <Route path="forum/threads/:threadId" element={<ThreadDetailPage />} />
             <Route path="moderation" element={<ModerationPage />} />
             <Route path="profile" element={<ProfilePage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
