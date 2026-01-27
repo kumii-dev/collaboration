@@ -126,6 +126,101 @@ code {
   border-top: 1px solid var(--border-color);
 }
 
+/* Avatar Placeholder */
+.avatar-placeholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-color), var(--info-color));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.avatar-placeholder.avatar-sm {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+
+/* Message Bubbles */
+.message-bubble {
+  margin-bottom: 4px;
+}
+
+.message-bubble.own-message {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.message-bubble.other-message {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Chat Container */
+.chat-container {
+  height: 100%;
+}
+
+.conversation-item {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.conversation-item:hover {
+  background-color: rgba(79, 70, 229, 0.05);
+}
+
+.conversation-item.active {
+  background-color: rgba(79, 70, 229, 0.1);
+}
+
+/* Messages Container */
+.messages-container {
+  scroll-behavior: smooth;
+}
+
+.messages-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.messages-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Conversation List */
+.conversation-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.conversation-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.conversation-list::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+
+.conversation-list::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+
 /* Forum Styles */
 .forum-category {
   background-color: white;

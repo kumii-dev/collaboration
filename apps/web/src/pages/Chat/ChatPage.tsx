@@ -1,26 +1,356 @@
-import React from 'react';
-import { Card } from 'react-bootstrap';
+import React, { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { Form, Button, ListGroup, Badge, Spinner } from 'react-bootstrap';
+import { FiSend, FiPaperclip, FiSmile, FiMoreVertical } from 'react-icons/fi';
+import { format } from 'date-fns';
+import api from '../../lib/api';
+import { supabase } from '../../lib/supabase';
+
+interface Message {
+  id: string;
+  content: string;
+  sender_id: string;
+  created_at: string;
+  sender?: {
+    full_name: string;
+    avatar_url?: string;
+  };
+  reactions?: Array<{
+    emoji: string;
+    count: number;
+  }>;
+}
+
+interface Conversation {
+  id: string;
+  type: 'direct' | 'group';
+  name?: string;
+  last_message_at: string;
+  unread_count?: number;
+  participants: Array<{
+    user_id: string;
+    full_name: string;
+    avatar_url?: string;
+  }>;
+  last_message?: {
+    content: string;
+    sender_name: string;
+  };
+}
 
 export default function ChatPage() {
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const [messageText, setMessageText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // Fetch conversations
+  const { data: conversations, isLoading: loadingConversations } = useQuery(
+    'conversations',
+    async () => {
+      const response = await api.get('/chat/conversations');
+      return response.data.data as Conversation[];
+    },
+    { refetchInterval: 30000 } // Refetch every 30 seconds
+  );
+
+  // Fetch messages for selected conversation
+  const { data: messages, isLoading: loadingMessages } = useQuery(
+    ['messages', selectedConversation],
+    async () => {
+      if (!selectedConversation) return [];
+      const response = await api.get(`/chat/conversations/${selectedConversation}/messages`, {
+        params: { limit: 50 }
+      });
+      return response.data.data as Message[];
+    },
+    {
+      enabled: !!selectedConversation,
+      refetchInterval: 5000 // Refetch every 5 seconds
+    }
+  );
+
+  // Send message mutation
+  const sendMessageMutation = useMutation(
+    async (content: string) => {
+      if (!selectedConversation) throw new Error('No conversation selected');
+      const response = await api.post(`/chat/conversations/${selectedConversation}/messages`, {
+        content
+      });
+      return response.data;
+    },
+    {
+      onSuccess: () => {
+        setMessageText('');
+        queryClient.invalidateQueries(['messages', selectedConversation]);
+        queryClient.invalidateQueries('conversations');
+        scrollToBottom();
+      }
+    }
+  );
+
+  // Subscribe to realtime updates
+  useEffect(() => {
+    if (!selectedConversation) return;
+
+    const channel = supabase
+      .channel(`conversation:${selectedConversation}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${selectedConversation}`
+        },
+        () => {
+          queryClient.invalidateQueries(['messages', selectedConversation]);
+          scrollToBottom();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedConversation, queryClient]);
+
+  // Handle typing indicator
+  const handleTyping = () => {
+    if (!isTyping) {
+      setIsTyping(true);
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTyping(false);
+    }, 3000);
+  };
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageText.trim() || !selectedConversation) return;
+
+    sendMessageMutation.mutate(messageText.trim());
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const selectedConvData = conversations?.find(c => c.id === selectedConversation);
+
   return (
-    <div>
-      <h2 className="mb-4">Chat & Messaging</h2>
-      <Card>
-        <Card.Body>
-          <p>Chat interface will be implemented here with:</p>
-          <ul>
-            <li>Conversations list</li>
-            <li>Message thread view</li>
-            <li>Message composer with attachments</li>
-            <li>Realtime updates via Supabase Realtime</li>
-            <li>Read receipts and reactions</li>
-            <li>Typing indicators</li>
-          </ul>
-          <p className="text-muted">
-            Connect to: <code>GET /api/chat/conversations</code>
-          </p>
-        </Card.Body>
-      </Card>
+    <div className="chat-container">
+      <div className="row g-0" style={{ height: 'calc(100vh - 100px)' }}>
+        {/* Conversations List */}
+        <div className="col-md-4 border-end">
+          <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
+            <h5 className="mb-0">Messages</h5>
+            <Button variant="primary" size="sm">
+              New Chat
+            </Button>
+          </div>
+
+          <div className="conversation-list" style={{ overflowY: 'auto', height: 'calc(100% - 60px)' }}>
+            {loadingConversations && (
+              <div className="text-center p-4">
+                <Spinner animation="border" size="sm" />
+              </div>
+            )}
+
+            {conversations && conversations.length === 0 && (
+              <div className="text-center p-4 text-muted">
+                <p>No conversations yet</p>
+                <small>Start a new chat to get started</small>
+              </div>
+            )}
+
+            <ListGroup variant="flush">
+              {conversations?.map((conversation) => (
+                <ListGroup.Item
+                  key={conversation.id}
+                  action
+                  active={selectedConversation === conversation.id}
+                  onClick={() => setSelectedConversation(conversation.id)}
+                  className="conversation-item"
+                >
+                  <div className="d-flex align-items-start">
+                    <div className="avatar-placeholder me-3">
+                      {conversation.participants[0]?.full_name?.charAt(0) || '?'}
+                    </div>
+                    <div className="flex-grow-1">
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <h6 className="mb-0">
+                          {conversation.name || conversation.participants[0]?.full_name || 'Unknown'}
+                        </h6>
+                        <small className="text-muted">
+                          {conversation.last_message_at
+                            ? format(new Date(conversation.last_message_at), 'MMM d')
+                            : ''}
+                        </small>
+                      </div>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <small className="text-muted text-truncate" style={{ maxWidth: '200px' }}>
+                          {conversation.last_message?.content || 'No messages yet'}
+                        </small>
+                        {conversation.unread_count && conversation.unread_count > 0 && (
+                          <Badge bg="primary" pill>
+                            {conversation.unread_count}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </ListGroup.Item>
+              ))}
+            </ListGroup>
+          </div>
+        </div>
+
+        {/* Message Thread */}
+        <div className="col-md-8">
+          {!selectedConversation ? (
+            <div className="d-flex align-items-center justify-content-center h-100 text-muted">
+              <div className="text-center">
+                <h4>Select a conversation</h4>
+                <p>Choose a conversation from the list to start messaging</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Conversation Header */}
+              <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
+                <div className="d-flex align-items-center">
+                  <div className="avatar-placeholder me-3">
+                    {selectedConvData?.participants[0]?.full_name?.charAt(0) || '?'}
+                  </div>
+                  <div>
+                    <h6 className="mb-0">
+                      {selectedConvData?.name || selectedConvData?.participants[0]?.full_name || 'Unknown'}
+                    </h6>
+                    <small className="text-muted">
+                      {selectedConvData?.participants.length || 0} participants
+                    </small>
+                  </div>
+                </div>
+                <Button variant="link" className="text-muted">
+                  <FiMoreVertical />
+                </Button>
+              </div>
+
+              {/* Messages */}
+              <div
+                className="messages-container p-3"
+                style={{
+                  overflowY: 'auto',
+                  height: 'calc(100% - 140px)',
+                  backgroundColor: '#f8f9fa'
+                }}
+              >
+                {loadingMessages && (
+                  <div className="text-center p-4">
+                    <Spinner animation="border" size="sm" />
+                  </div>
+                )}
+
+                {messages?.map((message) => {
+                  const isOwnMessage = message.sender_id === localStorage.getItem('user_id');
+                  
+                  return (
+                    <div
+                      key={message.id}
+                      className={`message-bubble mb-3 ${isOwnMessage ? 'own-message' : 'other-message'}`}
+                    >
+                      <div className={`d-flex ${isOwnMessage ? 'justify-content-end' : 'justify-content-start'}`}>
+                        {!isOwnMessage && (
+                          <div className="avatar-placeholder avatar-sm me-2">
+                            {message.sender?.full_name?.charAt(0) || '?'}
+                          </div>
+                        )}
+                        <div style={{ maxWidth: '70%' }}>
+                          {!isOwnMessage && (
+                            <small className="text-muted d-block mb-1">
+                              {message.sender?.full_name || 'Unknown'}
+                            </small>
+                          )}
+                          <div
+                            className={`p-3 rounded ${
+                              isOwnMessage ? 'bg-primary text-white' : 'bg-white'
+                            }`}
+                          >
+                            <p className="mb-0" style={{ whiteSpace: 'pre-wrap' }}>
+                              {message.content}
+                            </p>
+                          </div>
+                          <small className="text-muted d-block mt-1">
+                            {format(new Date(message.created_at), 'HH:mm')}
+                          </small>
+                        </div>
+                        {isOwnMessage && (
+                          <div className="avatar-placeholder avatar-sm ms-2">
+                            {message.sender?.full_name?.charAt(0) || '?'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Message Composer */}
+              <div className="message-composer p-3 border-top bg-white">
+                <Form onSubmit={handleSendMessage}>
+                  <div className="d-flex align-items-center gap-2">
+                    <Button variant="link" className="text-muted p-2">
+                      <FiPaperclip size={20} />
+                    </Button>
+                    <Form.Control
+                      type="text"
+                      placeholder="Type a message..."
+                      value={messageText}
+                      onChange={(e) => {
+                        setMessageText(e.target.value);
+                        handleTyping();
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendMessage(e);
+                        }
+                      }}
+                    />
+                    <Button variant="link" className="text-muted p-2">
+                      <FiSmile size={20} />
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      disabled={!messageText.trim() || sendMessageMutation.isLoading}
+                    >
+                      {sendMessageMutation.isLoading ? (
+                        <Spinner animation="border" size="sm" />
+                      ) : (
+                        <FiSend size={18} />
+                      )}
+                    </Button>
+                  </div>
+                </Form>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
