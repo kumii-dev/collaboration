@@ -230,6 +230,15 @@ code {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+.forum-category-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.forum-category-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
 .forum-board {
   padding: 15px;
   border-bottom: 1px solid var(--border-color);
@@ -239,6 +248,24 @@ code {
 
 .forum-board:hover {
   background-color: var(--light-bg);
+}
+
+.board-item {
+  transition: background-color 0.2s ease;
+}
+
+.board-item:hover {
+  background-color: rgba(79, 70, 229, 0.05);
+}
+
+.thread-item {
+  transition: background-color 0.2s ease, border-left 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.thread-item:hover {
+  background-color: rgba(79, 70, 229, 0.05);
+  border-left-color: var(--primary-color);
 }
 
 .thread-card {
