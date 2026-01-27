@@ -9,6 +9,7 @@ import MainLayout from './components/layouts/MainLayout';
 
 // Pages
 import LoginPage from './pages/Auth/LoginPage';
+import DashboardPage from './pages/Dashboard/DashboardPage';
 import ChatPage from './pages/Chat/ChatPage';
 import ForumPage from './pages/Forum/ForumPage';
 import ThreadDetailPage from './pages/Forum/ThreadDetailPage';
@@ -69,7 +70,8 @@ function App() {
             path="/"
             element={session ? <MainLayout /> : <Navigate to="/login" />}
           >
-            <Route index element={<Navigate to="/chat" />} />
+            <Route index element={<Navigate to="/dashboard" />} />
+            <Route path="dashboard" element={<DashboardPage />} />
             <Route path="chat/*" element={<ChatPage />} />
             <Route path="forum" element={<ForumPage />} />
             <Route path="forum/threads/:threadId" element={<ThreadDetailPage />} />

@@ -1,12 +1,13 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Nav } from 'react-bootstrap';
-import { FaComments, FaFolderOpen, FaShieldAlt, FaUser } from 'react-icons/fa';
+import { FaHome, FaComments, FaFolderOpen, FaShieldAlt, FaUser } from 'react-icons/fa';
 
 export default function Sidebar() {
   const location = useLocation();
 
   const navItems = [
+    { path: '/dashboard', icon: <FaHome />, label: 'Dashboard' },
     { path: '/chat', icon: <FaComments />, label: 'Chat' },
     { path: '/forum', icon: <FaFolderOpen />, label: 'Forum' },
     { path: '/moderation', icon: <FaShieldAlt />, label: 'Moderation' },
