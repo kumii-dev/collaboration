@@ -37,16 +37,20 @@ app.use(cors({
   credentials: true,
 }));
 
-// Rate limiting
+// Rate limiting - more lenient in development
 const limiter = rateLimit({
   windowMs: parseInt(config.RATE_LIMIT_WINDOW_MS),
-  max: parseInt(config.RATE_LIMIT_MAX_REQUESTS),
+  max: config.NODE_ENV === 'development' ? 1000 : parseInt(config.RATE_LIMIT_MAX_REQUESTS), // 1000 requests in dev
   message: {
     success: false,
     error: 'Too many requests, please try again later.',
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health' || req.path === '/api/health';
+  },
 });
 
 app.use('/api/', limiter);

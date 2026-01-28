@@ -12,6 +12,7 @@ import LoginPage from './pages/Auth/LoginPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import ChatPage from './pages/Chat/ChatPage';
 import ForumPage from './pages/Forum/ForumPage';
+import NewThreadPage from './pages/Forum/NewThreadPage';
 import ThreadDetailPage from './pages/Forum/ThreadDetailPage';
 import ModerationPage from './pages/Moderation/ModerationPage';
 import ProfilePage from './pages/Profile/ProfilePage';
@@ -34,6 +35,8 @@ function App() {
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('🔵 Initial session:', session ? 'Authenticated' : 'Not authenticated');
+      console.log('🔵 Session data:', session);
       setSession(session);
       setLoading(false);
     });
@@ -41,7 +44,9 @@ function App() {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('🔵 Auth state change:', event, session ? 'Authenticated' : 'Not authenticated');
+      console.log('🔵 Session data:', session);
       setSession(session);
     });
 
@@ -49,6 +54,7 @@ function App() {
   }, []);
 
   if (loading) {
+    console.log('🔵 App loading...');
     return (
       <div className="d-flex justify-content-center align-items-center vh-100">
         <div className="spinner-border text-primary" role="status">
@@ -57,6 +63,8 @@ function App() {
       </div>
     );
   }
+
+  console.log('🔵 App render - session:', session ? 'Authenticated' : 'Not authenticated');
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -74,6 +82,7 @@ function App() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="chat/*" element={<ChatPage />} />
             <Route path="forum" element={<ForumPage />} />
+            <Route path="forum/new-thread" element={<NewThreadPage />} />
             <Route path="forum/threads/:threadId" element={<ThreadDetailPage />} />
             <Route path="moderation" element={<ModerationPage />} />
             <Route path="profile" element={<ProfilePage />} />

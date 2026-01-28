@@ -26,6 +26,18 @@ const voteSchema = z.object({
   voteValue: z.enum(['1', '-1']).transform(val => parseInt(val)),
 });
 
+const createCategorySchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().min(1).max(500),
+  icon: z.string().max(10).optional(),
+});
+
+const createBoardSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().min(1).max(500),
+  category_id: z.string().uuid(),
+});
+
 const querySchema = z.object({
   limit: z.string().optional().transform(val => val ? parseInt(val) : 20),
   offset: z.string().optional().transform(val => val ? parseInt(val) : 0),
@@ -66,9 +78,16 @@ router.get('/categories', authenticate, async (req: AuthRequest, res) => {
       });
     }
 
+    // Add board_count to each category
+    const categoriesWithCount = data.map(category => ({
+      ...category,
+      board_count: category.forum_boards?.length || 0,
+      slug: category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    }));
+
     res.json({
       success: true,
-      data: { categories: data },
+      data: categoriesWithCount,
     });
   } catch (error) {
     logger.error('Get categories error', { error });
@@ -78,6 +97,60 @@ router.get('/categories', authenticate, async (req: AuthRequest, res) => {
     });
   }
 });
+
+/**
+ * GET /api/forum/categories/:id/boards
+ * Get boards in a category
+ */
+router.get(
+  '/categories/:id/boards',
+  authenticate,
+  validateParams(z.object({ id: z.string().uuid() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      const { data, error } = await supabaseAdmin
+        .from('forum_boards')
+        .select(`
+          id,
+          name,
+          description,
+          category_id,
+          sort_order,
+          is_private,
+          required_role
+        `)
+        .eq('category_id', id)
+        .order('sort_order', { ascending: true });
+
+      if (error) {
+        logger.error('Failed to fetch boards', { error });
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to fetch boards',
+        });
+      }
+
+      // Add slug dynamically since it's not in the database
+      const boardsWithSlug = data.map(board => ({
+        ...board,
+        slug: board.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      }));
+
+      res.json({
+        success: true,
+        data: boardsWithSlug,
+      });
+    } catch (error) {
+      logger.error('Get boards error', { error });
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  }
+);
 
 /**
  * GET /api/forum/boards/:id/threads
@@ -422,6 +495,171 @@ router.post(
       res.status(500).json({
         success: false,
         error: 'Internal server error',
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/forum/categories
+ * Create a new category
+ */
+router.post(
+  '/categories',
+  authenticate,
+  validateBody(createCategorySchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { name, description, icon } = req.body;
+      console.log('🔵 [POST /categories] Request body:', { name, description, icon });
+      console.log('🔵 [POST /categories] User:', req.user?.id);
+
+      // Get the max sort_order (maybeSingle returns null instead of error when no rows)
+      const { data: maxSort, error: maxSortError } = await supabaseAdmin
+        .from('forum_categories')
+        .select('sort_order')
+        .order('sort_order', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      console.log('🔵 [POST /categories] Max sort order:', maxSort, 'Error:', maxSortError);
+
+      const sortOrder = (maxSort?.sort_order || 0) + 1;
+      console.log('🔵 [POST /categories] New sort order:', sortOrder);
+
+      const insertData = {
+        name,
+        description,
+        icon: icon || null,
+        sort_order: sortOrder,
+        archived: false,
+      };
+      console.log('🔵 [POST /categories] Inserting data:', insertData);
+
+      const { data: category, error } = await supabaseAdmin
+        .from('forum_categories')
+        .insert(insertData)
+        .select()
+        .single();
+
+      console.log('🔵 [POST /categories] Insert result - data:', category, 'error:', error);
+
+      if (error) {
+        console.error('❌ [POST /categories] Database error:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          fullError: error
+        });
+        logger.error('Failed to create category', { error });
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to create category',
+          message: error.message,
+        });
+      }
+
+      // Add board_count to match the format from GET /categories
+      const categoryWithCount = {
+        ...category,
+        board_count: 0,
+        slug: category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      };
+
+      console.log('✅ [POST /categories] Success! Created category:', categoryWithCount);
+
+      res.status(201).json({
+        success: true,
+        data: categoryWithCount,
+      });
+    } catch (error) {
+      console.error('❌ [POST /categories] Catch block error:', {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      logger.error('Create category error', { error });
+      const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        message: errorMessage,
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/forum/boards
+ * Create a new board
+ */
+router.post(
+  '/boards',
+  authenticate,
+  validateBody(createBoardSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { name, description, category_id } = req.body;
+
+      // Verify category exists
+      const { data: category, error: categoryError } = await supabaseAdmin
+        .from('forum_categories')
+        .select('id')
+        .eq('id', category_id)
+        .single();
+
+      if (categoryError || !category) {
+        return res.status(404).json({
+          success: false,
+          error: 'Category not found',
+        });
+      }
+
+      // Get the max sort_order for this category (maybeSingle returns null instead of error when no rows)
+      const { data: maxSort } = await supabaseAdmin
+        .from('forum_boards')
+        .select('sort_order')
+        .eq('category_id', category_id)
+        .order('sort_order', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const sortOrder = (maxSort?.sort_order || 0) + 1;
+
+      const { data: board, error } = await supabaseAdmin
+        .from('forum_boards')
+        .insert({
+          name,
+          description,
+          category_id,
+          sort_order: sortOrder,
+          is_private: false,
+          required_role: null,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        logger.error('Failed to create board', { error });
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to create board',
+          message: error.message,
+        });
+      }
+
+      res.status(201).json({
+        success: true,
+        data: board,
+      });
+    } catch (error) {
+      logger.error('Create board error', { error });
+      const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        message: errorMessage,
       });
     }
   }
