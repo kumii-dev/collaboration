@@ -16,11 +16,18 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "apps/api/api/index.js"
+      "dest": "/apps/api/api/index.js"
+    },
+    {
+      "src": "/health",
+      "dest": "/apps/api/api/index.js"
+    },
+    {
+      "handle": "filesystem"
     },
     {
       "src": "/(.*)",
-      "dest": "apps/web/dist/$1"
+      "dest": "/apps/web/dist/$1"
     }
   ],
   "env": {
