@@ -15,5 +15,17 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'bootstrap-vendor': ['bootstrap', 'react-bootstrap'],
+          'icons-vendor': ['react-icons'],
+        },
+      },
+    },
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom', 'bootstrap', 'react-bootstrap'],
   },
 });
