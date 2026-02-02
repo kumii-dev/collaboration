@@ -1,16 +1,4 @@
 {
   "version": 2,
-  "name": "kumii-collaboration-api",
-  "builds": [
-    {
-      "src": "src/index.ts",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/src/index.ts"
-    }
-  ]
+  "name": "kumii-collaboration-api"
 }
