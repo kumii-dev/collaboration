@@ -1,0 +1,17 @@
+# Source files (already compiled to dist)
+src
+
+# Development files
+*.ts
+!api/**
+
+# Tests
+**/*.test.*
+**/*.spec.*
+
+# Config
+tsconfig.json
+.eslintrc.*
+
+# Docs
+*.md
