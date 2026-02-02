@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Badge, Button, Form, Spinner, Alert, Row, Col, Dropdown, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Card, Badge, Button, Form, Spinner, Alert, Dropdown, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { 
   FiArrowLeft, 
   FiThumbsUp, 

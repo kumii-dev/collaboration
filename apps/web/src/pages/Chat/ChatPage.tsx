@@ -67,7 +67,7 @@ export default function ChatPage() {
   );
 
   // Fetch messages for selected conversation
-  const { data: messages, isLoading: loadingMessages, error: messagesError } = useQuery(
+  const { data: messages, isLoading: loadingMessages } = useQuery(
     ['messages', selectedConversation],
     async () => {
       if (!selectedConversation) return [];

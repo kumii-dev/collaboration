@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, Button, Spinner, Form, InputGroup } from 'react-bootstrap';
-import { FiMessageSquare, FiTrendingUp, FiClock, FiStar, FiSearch, FiArrowRight, FiUsers, FiEye } from 'react-icons/fi';
+import { FiMessageSquare, FiStar, FiSearch, FiArrowRight, FiUsers, FiEye } from 'react-icons/fi';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
