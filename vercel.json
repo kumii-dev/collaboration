@@ -1,3 +1,6 @@
 {
-  "outputDirectory": "apps/web/dist"
+  "buildCommand": "cd apps/web && npm install && npm run build && cd ../api && npm install && npm run build",
+  "outputDirectory": "apps/web/dist",
+  "framework": "vite",
+  "installCommand": "echo 'Skipping root install'"
 }
