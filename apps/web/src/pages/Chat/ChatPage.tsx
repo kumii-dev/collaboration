@@ -50,17 +50,24 @@ export default function ChatPage() {
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Fetch conversations
-  const { data: conversations, isLoading: loadingConversations } = useQuery(
+  const { data: conversations, isLoading: loadingConversations, error: conversationsError } = useQuery(
     'conversations',
     async () => {
       const response = await api.get('/chat/conversations');
-      return response.data.data as Conversation[];
+      // API returns { data: { conversations: [...], total, limit, offset } }
+      return response.data.data.conversations as Conversation[];
     },
-    { refetchInterval: 30000 } // Refetch every 30 seconds
+    { 
+      refetchInterval: 30000, // Refetch every 30 seconds
+      retry: 1,
+      onError: (error: any) => {
+        console.error('❌ Failed to load conversations:', error);
+      }
+    }
   );
 
   // Fetch messages for selected conversation
-  const { data: messages, isLoading: loadingMessages } = useQuery(
+  const { data: messages, isLoading: loadingMessages, error: messagesError } = useQuery(
     ['messages', selectedConversation],
     async () => {
       if (!selectedConversation) return [];
@@ -71,7 +78,11 @@ export default function ChatPage() {
     },
     {
       enabled: !!selectedConversation,
-      refetchInterval: 5000 // Refetch every 5 seconds
+      refetchInterval: 5000, // Refetch every 5 seconds
+      retry: 1,
+      onError: (error: any) => {
+        console.error('❌ Failed to load messages:', error);
+      }
     }
   );
 
@@ -190,6 +201,25 @@ export default function ChatPage() {
   }, [messages]);
 
   const selectedConvData = conversations?.find(c => c.id === selectedConversation);
+
+  // Show error if conversations failed to load
+  if (conversationsError) {
+    return (
+      <div className="chat-container">
+        <div className="alert alert-danger m-4" role="alert">
+          <h5>Failed to load conversations</h5>
+          <p className="mb-0">
+            {(conversationsError as any)?.response?.status === 403 
+              ? 'You do not have permission to access chat. Please make sure your user profile is set up correctly.'
+              : 'An error occurred while loading your conversations. Please try refreshing the page.'}
+          </p>
+          <button className="btn btn-danger mt-3" onClick={() => window.location.reload()}>
+            Refresh Page
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="chat-container">

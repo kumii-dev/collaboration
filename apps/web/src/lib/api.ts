@@ -13,12 +13,16 @@ const api = axios.create({
 // Add auth token to requests
 api.interceptors.request.use(async (config) => {
   try {
+    console.log('🔵 API Request:', config.method?.toUpperCase(), config.url);
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
       config.headers.Authorization = `Bearer ${session.access_token}`;
+      console.log('✅ Auth token attached to request');
+    } else {
+      console.warn('⚠️ No session found, request will be unauthenticated');
     }
   } catch (error) {
-    console.error('Failed to get session for API request:', error);
+    console.error('❌ Failed to get session for API request:', error);
   }
   return config;
 });

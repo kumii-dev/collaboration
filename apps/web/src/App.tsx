@@ -12,6 +12,7 @@ import LoginPage from './pages/Auth/LoginPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import ChatPage from './pages/Chat/ChatPage';
 import ForumPage from './pages/Forum/ForumPage';
+import CategoryDetailPage from './pages/Forum/CategoryDetailPage';
 import NewThreadPage from './pages/Forum/NewThreadPage';
 import ThreadDetailPage from './pages/Forum/ThreadDetailPage';
 import ModerationPage from './pages/Moderation/ModerationPage';
@@ -72,7 +73,7 @@ function App() {
         <Routes>
           <Route
             path="/login"
-            element={!session ? <LoginPage /> : <Navigate to="/chat" />}
+            element={!session ? <LoginPage /> : <Navigate to="/forum" />}
           />
           <Route
             path="/"
@@ -82,6 +83,7 @@ function App() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="chat/*" element={<ChatPage />} />
             <Route path="forum" element={<ForumPage />} />
+            <Route path="forum/categories/:slug" element={<CategoryDetailPage />} />
             <Route path="forum/new-thread" element={<NewThreadPage />} />
             <Route path="forum/threads/:threadId" element={<ThreadDetailPage />} />
             <Route path="moderation" element={<ModerationPage />} />

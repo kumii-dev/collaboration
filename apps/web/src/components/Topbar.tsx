@@ -16,6 +16,7 @@ export default function Topbar() {
       return response.data.count || 0;
     },
     {
+      enabled: false, // Disabled until notifications endpoint is implemented
       refetchInterval: 30000, // Refresh every 30 seconds
     }
   );

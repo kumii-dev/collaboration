@@ -64,19 +64,44 @@ export default function NewThreadPage() {
 
   // Create thread mutation
   const createThreadMutation = useMutation(
-    async (data: { board_id: string; title: string; content: string; tags?: string[] }) => {
+    async (data: { boardId: string; title: string; content: string; tags?: string[] }) => {
+      console.log('🔵 Creating thread with data:', data);
       const response = await api.post('/forum/threads', data);
-      return response.data.data;
+      console.log('🟢 Thread creation response:', response.data);
+      // Backend returns { success: true, data: { thread: {...} } }
+      return response.data.data.thread;
     },
     {
-      onSuccess: (data) => {
+      onSuccess: (thread) => {
+        console.log('✅ Thread created successfully:', thread);
         queryClient.invalidateQueries('forum-threads');
         queryClient.invalidateQueries('forum-trending');
         queryClient.invalidateQueries('forum-recent');
-        navigate(`/forum/threads/${data.id}`);
+        navigate(`/forum/threads/${thread.id}`);
       },
       onError: (err: any) => {
-        setError(err.response?.data?.message || 'Failed to create thread');
+        console.error('❌ Thread creation error:', {
+          fullError: err,
+          response: err.response,
+          responseData: err.response?.data,
+          message: err.response?.data?.message,
+          errorMessage: err.message,
+          status: err.response?.status,
+          validationDetails: err.response?.data?.details
+        });
+        
+        // Format error message with validation details
+        let errorMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to create thread';
+        
+        // If there are validation details, show them
+        if (err.response?.data?.details && Array.isArray(err.response.data.details)) {
+          const validationErrors = err.response.data.details
+            .map((detail: any) => `${detail.field}: ${detail.message}`)
+            .join(', ');
+          errorMsg = `Validation failed: ${validationErrors}`;
+        }
+        
+        setError(errorMsg);
       },
     }
   );
@@ -109,9 +134,22 @@ export default function NewThreadPage() {
           responseData: err.response?.data,
           message: err.response?.data?.message,
           errorMessage: err.message,
-          status: err.response?.status
+          status: err.response?.status,
+          validationDetails: err.response?.data?.details
         });
-        setModalError(err.response?.data?.message || 'Failed to create category');
+        
+        // Format error message with validation details
+        let errorMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to create category';
+        
+        // If there are validation details, show them
+        if (err.response?.data?.details && Array.isArray(err.response.data.details)) {
+          const validationErrors = err.response.data.details
+            .map((detail: any) => `${detail.field}: ${detail.message}`)
+            .join(', ');
+          errorMsg = `Validation failed: ${validationErrors}`;
+        }
+        
+        setModalError(errorMsg);
       },
     }
   );
@@ -143,9 +181,22 @@ export default function NewThreadPage() {
           responseData: err.response?.data,
           message: err.response?.data?.message,
           errorMessage: err.message,
-          status: err.response?.status
+          status: err.response?.status,
+          validationDetails: err.response?.data?.details
         });
-        setModalError(err.response?.data?.message || 'Failed to create board');
+        
+        // Format error message with validation details
+        let errorMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to create board';
+        
+        // If there are validation details, show them
+        if (err.response?.data?.details && Array.isArray(err.response.data.details)) {
+          const validationErrors = err.response.data.details
+            .map((detail: any) => `${detail.field}: ${detail.message}`)
+            .join(', ');
+          errorMsg = `Validation failed: ${validationErrors}`;
+        }
+        
+        setModalError(errorMsg);
       },
     }
   );
@@ -175,7 +226,7 @@ export default function NewThreadPage() {
       .filter(tag => tag.length > 0);
 
     createThreadMutation.mutate({
-      board_id: selectedBoardId,
+      boardId: selectedBoardId,  // Changed from board_id to boardId (camelCase)
       title: title.trim(),
       content: content.trim(),
       tags: tagArray.length > 0 ? tagArray : undefined,
@@ -472,15 +523,26 @@ export default function NewThreadPage() {
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Description <span className="text-danger">*</span></Form.Label>
+              <Form.Label>
+                Description <span className="text-danger">*</span>
+                <small className="text-muted ms-2">
+                  ({newCategoryDescription.length}/500 characters)
+                </small>
+              </Form.Label>
               <Form.Control
                 as="textarea"
                 rows={3}
                 placeholder="Describe what this category is for..."
                 value={newCategoryDescription}
                 onChange={(e) => setNewCategoryDescription(e.target.value)}
+                maxLength={500}
                 required
               />
+              {newCategoryDescription.length >= 450 && (
+                <Form.Text className={newCategoryDescription.length >= 500 ? 'text-danger' : 'text-warning'}>
+                  {500 - newCategoryDescription.length} characters remaining
+                </Form.Text>
+              )}
             </Form.Group>
 
             <Form.Group className="mb-3">
@@ -573,15 +635,26 @@ export default function NewThreadPage() {
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Description <span className="text-danger">*</span></Form.Label>
+              <Form.Label>
+                Description <span className="text-danger">*</span>
+                <small className="text-muted ms-2">
+                  ({newBoardDescription.length}/500 characters)
+                </small>
+              </Form.Label>
               <Form.Control
                 as="textarea"
                 rows={3}
                 placeholder="Describe what this board is for..."
                 value={newBoardDescription}
                 onChange={(e) => setNewBoardDescription(e.target.value)}
+                maxLength={500}
                 required
               />
+              {newBoardDescription.length >= 450 && (
+                <Form.Text className={newBoardDescription.length >= 500 ? 'text-danger' : 'text-warning'}>
+                  {500 - newBoardDescription.length} characters remaining
+                </Form.Text>
+              )}
             </Form.Group>
 
             <Alert variant="info" className="mb-3">
