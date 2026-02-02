@@ -20,26 +20,21 @@ const consoleFormat = winston.format.combine(
   })
 );
 
+// Check if running in serverless environment (Vercel)
+const isServerless = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
+
 const logger = winston.createLogger({
   level: config.LOG_LEVEL,
   format: logFormat,
   transports: [
     new winston.transports.Console({
-      format: consoleFormat,
-    }),
-    new winston.transports.File({
-      filename: 'logs/error.log',
-      level: 'error',
-    }),
-    new winston.transports.File({
-      filename: 'logs/combined.log',
+      format: isServerless ? logFormat : consoleFormat,
     }),
   ],
 });
 
-// In production, remove console transport and use proper log aggregation
-if (config.NODE_ENV === 'production') {
-  logger.clear();
+// Only add file transports in non-serverless environments
+if (!isServerless && config.NODE_ENV !== 'production') {
   logger.add(
     new winston.transports.File({
       filename: 'logs/error.log',
