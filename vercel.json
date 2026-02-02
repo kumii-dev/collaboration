@@ -1,5 +1,1 @@
-{
-  "buildCommand": "cd apps/api && npm install && npm run build",
-  "installCommand": "cd apps/api && npm install",
-  "framework": null
-}
+{}
