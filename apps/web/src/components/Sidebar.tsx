@@ -1,30 +1,30 @@
 import { Link } from 'react-router-dom';
 import { 
-  FaHome, 
-  FaComments, 
-  FaCalendar, 
-  FaPhone, 
-  FaFolder, 
-  FaBriefcase,
-  FaHeadphones,
-  FaEllipsisH,
-  FaChartLine,
-  FaSearch
-} from 'react-icons/fa';
+  AiOutlineHome,
+  AiOutlineMessage,
+  AiOutlineCalendar,
+  AiOutlinePhone,
+  AiOutlineFolder,
+  AiOutlineShop,
+  AiOutlineCustomerService,
+  AiOutlineEllipsis,
+  AiOutlineLineChart,
+  AiOutlineSearch
+} from 'react-icons/ai';
 import { MdGridView, MdTrendingUp } from 'react-icons/md';
 
 export default function Sidebar() {
   const sidebarIcons = [
-    { path: '/dashboard', icon: <FaHome size={20} />, label: 'Home' },
-    { path: '/activity', icon: <FaChartLine size={20} />, label: 'Activity', badge: 3 },
-    { path: '/chat', icon: <FaComments size={20} />, label: 'Chat' },
-    { path: '/calendar', icon: <FaCalendar size={20} />, label: 'Calendar' },
-    { path: '/calls', icon: <FaPhone size={20} />, label: 'Calls' },
-    { path: '/folder', icon: <FaFolder size={20} />, label: 'Folder' },
-    { path: '/business', icon: <FaBriefcase size={20} />, label: 'Business' },
+    { path: '/dashboard', icon: <AiOutlineHome size={20} />, label: 'Home' },
+    { path: '/activity', icon: <AiOutlineLineChart size={20} />, label: 'Activity', badge: 3 },
+    { path: '/chat', icon: <AiOutlineMessage size={20} />, label: 'Chat' },
+    { path: '/calendar', icon: <AiOutlineCalendar size={20} />, label: 'Calendar' },
+    { path: '/calls', icon: <AiOutlinePhone size={20} />, label: 'Calls' },
+    { path: '/folder', icon: <AiOutlineFolder size={20} />, label: 'Folder' },
+    { path: '/business', icon: <AiOutlineShop size={20} />, label: 'Business' },
     { path: '/community', icon: <MdGridView size={20} />, label: 'Community', active: true },
-    { path: '/support', icon: <FaHeadphones size={20} />, label: 'Support' },
-    { path: '/more', icon: <FaEllipsisH size={20} />, label: 'More' },
+    { path: '/support', icon: <AiOutlineCustomerService size={20} />, label: 'Support' },
+    { path: '/more', icon: <AiOutlineEllipsis size={20} />, label: 'More' },
   ];
 
   const growthGatewayItems = [
@@ -72,7 +72,7 @@ export default function Sidebar() {
       <div className="content-sidebar shadow-lg">
         {/* Search Bar */}
         <div className="sidebar-search">
-          <FaSearch className="search-icon" />
+          <AiOutlineSearch className="search-icon" />
           <input 
             type="text" 
             placeholder="Search apps and more" 
