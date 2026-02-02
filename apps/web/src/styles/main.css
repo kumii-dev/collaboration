@@ -122,16 +122,15 @@ code {
 }
 
 .user-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+  height: 2rem;
+  border-radius: 60%;
   background-color: #B8D4A8;
   color: #3A4A3D;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  font-size: 16px;
+  font-size: 1rem;
 }
 
 /* Main Content Sidebar */
@@ -153,7 +152,7 @@ code {
   left: 16px;
   top: 50%;
   transform: translateY(-50%);
-  color: #666;
+  color: #8c8c8c;
   font-size: 18px;
 }
 
@@ -223,9 +222,9 @@ code {
 }
 
 .menu-item-icon {
-  width: 40px;
-  height: 40px;
-  background-color: #6B7A6F;
+  width: 2rem;
+  height: 2rem;
+  background-color: #7a8567;
   border-radius: 8px;
   display: flex;
   align-items: center;

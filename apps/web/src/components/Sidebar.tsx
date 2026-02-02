@@ -1,30 +1,31 @@
 import { Link } from 'react-router-dom';
 import { 
-  AiOutlineHome,
-  AiOutlineMessage,
-  AiOutlineCalendar,
-  AiOutlinePhone,
-  AiOutlineFolder,
-  AiOutlineShop,
-  AiOutlineCustomerService,
-  AiOutlineEllipsis,
-  AiOutlineLineChart,
-  AiOutlineSearch
-} from 'react-icons/ai';
-import { MdGridView, MdTrendingUp } from 'react-icons/md';
+  HiOutlineHome,
+  HiOutlineChat,
+  HiOutlineCalendar,
+  HiOutlinePhone,
+  HiOutlineFolderOpen,
+  HiOutlineBriefcase,
+  HiOutlineSupport,
+  HiOutlineDotsHorizontal,
+  HiOutlineSearch
+} from 'react-icons/hi';
+import { MdOutlineGridView } from 'react-icons/md';
+import { AiOutlineLineChart } from 'react-icons/ai';
+import { IoTrendingUpOutline } from 'react-icons/io5';
 
 export default function Sidebar() {
   const sidebarIcons = [
-    { path: '/dashboard', icon: <AiOutlineHome size={20} />, label: 'Home' },
+    { path: '/dashboard', icon: <HiOutlineHome size={20} />, label: 'Home' },
     { path: '/activity', icon: <AiOutlineLineChart size={20} />, label: 'Activity', badge: 3 },
-    { path: '/chat', icon: <AiOutlineMessage size={20} />, label: 'Chat' },
-    { path: '/calendar', icon: <AiOutlineCalendar size={20} />, label: 'Calendar' },
-    { path: '/calls', icon: <AiOutlinePhone size={20} />, label: 'Calls' },
-    { path: '/folder', icon: <AiOutlineFolder size={20} />, label: 'Folder' },
-    { path: '/business', icon: <AiOutlineShop size={20} />, label: 'Business' },
-    { path: '/community', icon: <MdGridView size={20} />, label: 'Community', active: true },
-    { path: '/support', icon: <AiOutlineCustomerService size={20} />, label: 'Support' },
-    { path: '/more', icon: <AiOutlineEllipsis size={20} />, label: 'More' },
+    { path: '/chat', icon: <HiOutlineChat size={20} />, label: 'Chat' },
+    { path: '/calendar', icon: <HiOutlineCalendar size={20} />, label: 'Calendar' },
+    { path: '/calls', icon: <HiOutlinePhone size={20} />, label: 'Calls' },
+    { path: '/folder', icon: <HiOutlineFolderOpen size={20} />, label: 'Folder' },
+    { path: '/business', icon: <HiOutlineBriefcase size={20} />, label: 'Business' },
+    { path: '/community', icon: <MdOutlineGridView size={20} />, label: 'Community', active: true },
+    { path: '/support', icon: <HiOutlineSupport size={20} />, label: 'Support' },
+    { path: '/more', icon: <HiOutlineDotsHorizontal size={20} />, label: 'More' },
   ];
 
   const growthGatewayItems = [
@@ -72,7 +73,7 @@ export default function Sidebar() {
       <div className="content-sidebar shadow-lg">
         {/* Search Bar */}
         <div className="sidebar-search">
-          <AiOutlineSearch className="search-icon" />
+          <HiOutlineSearch className="search-icon" />
           <input 
             type="text" 
             placeholder="Search apps and more" 
@@ -91,7 +92,7 @@ export default function Sidebar() {
                 className={`sidebar-menu-item ${item.highlight ? 'highlight' : ''}`}
               >
                 <div className="menu-item-icon">
-                  <MdTrendingUp />
+                  <IoTrendingUpOutline />
                 </div>
                 <span>{item.label}</span>
               </Link>
