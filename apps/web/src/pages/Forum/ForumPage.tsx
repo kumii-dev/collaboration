@@ -105,7 +105,7 @@ export default function ForumPage() {
             marginBottom: '1rem',
             letterSpacing: '-1px'
           }}>
-            Forum & Discussions
+            Communities
           </h1>
           
           <p style={{ 
@@ -183,7 +183,7 @@ export default function ForumPage() {
         {/* Filter Tabs */}
         <div className="d-flex justify-content-center gap-3 mb-4">
           {[
-            { key: 'all', label: 'All Topics', count: trendingThreads?.length || 0 },
+            { key: 'all', label: 'Communities', count: trendingThreads?.length || 0 },
             { key: 'trending', label: 'Trending', count: trendingThreads?.length || 0 },
             { key: 'recent', label: 'Recent', count: recentThreads?.length || 0 },
           ].map((filter) => (

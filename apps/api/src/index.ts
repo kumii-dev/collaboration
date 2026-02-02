@@ -97,44 +97,48 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // =====================================================
+// =====================================================
 // START SERVER
 // =====================================================
 
-const PORT = parseInt(config.PORT);
+// Only start the server if not running on Vercel (serverless environment)
+if (process.env.VERCEL !== '1') {
+  const PORT = parseInt(config.PORT);
 
-const server = app.listen(PORT, () => {
-  logger.info(`🚀 Server running on port ${PORT}`);
-  logger.info(`📝 Environment: ${config.NODE_ENV}`);
-  logger.info(`🔗 API URL: ${config.API_URL}`);
-  logger.info(`🌐 CORS Origin: ${config.CORS_ORIGIN}`);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, closing server gracefully...');
-  server.close(() => {
-    logger.info('Server closed');
-    process.exit(0);
+  const server = app.listen(PORT, () => {
+    logger.info(`🚀 Server running on port ${PORT}`);
+    logger.info(`📝 Environment: ${config.NODE_ENV}`);
+    logger.info(`🔗 API URL: ${config.API_URL}`);
+    logger.info(`🌐 CORS Origin: ${config.CORS_ORIGIN}`);
   });
-});
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received, closing server gracefully...');
-  server.close(() => {
-    logger.info('Server closed');
-    process.exit(0);
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    logger.info('SIGTERM received, closing server gracefully...');
+    server.close(() => {
+      logger.info('Server closed');
+      process.exit(0);
+    });
   });
-});
 
-// Handle uncaught errors
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error);
-  process.exit(1);
-});
+  process.on('SIGINT', () => {
+    logger.info('SIGINT received, closing server gracefully...');
+    server.close(() => {
+      logger.info('Server closed');
+      process.exit(0);
+    });
+  });
 
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
-});
+  // Handle uncaught errors
+  process.on('uncaughtException', (error) => {
+    logger.error('Uncaught Exception:', error);
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    process.exit(1);
+  });
+}
 
 export default app;
