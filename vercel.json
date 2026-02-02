@@ -1,5 +1,5 @@
 {
   "buildCommand": "cd apps/api && npm install && npm run build",
-  "installCommand": "npm install --prefix apps/api",
+  "installCommand": "cd apps/api && npm install",
   "framework": null
 }
