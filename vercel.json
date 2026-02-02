@@ -1,17 +1,5 @@
 {
   "buildCommand": "cd apps/api && npm install && npm run build",
-  "outputDirectory": "apps/api/dist",
-  "installCommand": "npm install",
-  "framework": null,
-  "functions": {
-    "apps/api/api/*.js": {
-      "runtime": "nodejs20.x"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/apps/api/api/index.js"
-    }
-  ]
+  "installCommand": "npm install --prefix apps/api",
+  "framework": null
 }
