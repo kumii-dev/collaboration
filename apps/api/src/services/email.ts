@@ -3,7 +3,8 @@ import config from '../config.js';
 import logger from '../logger.js';
 import { retry } from '../utils/helpers.js';
 
-const resend = new Resend(config.RESEND_API_KEY);
+// Initialize Resend only if API key is available
+const resend = config.RESEND_API_KEY ? new Resend(config.RESEND_API_KEY) : null;
 
 export interface EmailOptions {
   to: string | string[];
@@ -16,10 +17,19 @@ export interface EmailOptions {
  * Send email with retry logic
  */
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
+  // Skip if email is not configured
+  if (!resend || !config.RESEND_API_KEY || !config.RESEND_FROM_EMAIL) {
+    logger.warn('Email service not configured, skipping email send', {
+      to: options.to,
+      subject: options.subject,
+    });
+    return false;
+  }
+
   try {
     await retry(async () => {
       const result = await resend.emails.send({
-        from: options.from || config.RESEND_FROM_EMAIL,
+        from: options.from || config.RESEND_FROM_EMAIL!,
         to: Array.isArray(options.to) ? options.to : [options.to],
         subject: options.subject,
         html: options.html,
