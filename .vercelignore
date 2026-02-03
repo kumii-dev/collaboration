@@ -47,8 +47,11 @@ build/
 # SQL files
 *.sql
 
-# Scripts
-*.sh
+# Scripts (excluding build script)
+setup.sh
+setup-supabase.sh
+verify-setup.sh
+deploy-vercel.sh
 
 # MacOS
 .DS_Store
