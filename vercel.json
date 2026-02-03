@@ -1,7 +1,7 @@
 {
-  "buildCommand": "npm run vercel-build",
+  "buildCommand": "cd apps/web && npm install && npm run build && cd ../api && npm install && npm run build",
   "outputDirectory": "apps/web/dist",
-  "installCommand": "npm install --prefix apps/web && npm install --prefix apps/api",
+  "installCommand": "echo 'Dependencies installed during build'",
   "framework": null,
   "functions": {
     "api/index.js": {
