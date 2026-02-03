@@ -1,5 +1,5 @@
 {
-  "buildCommand": "bash build.sh",
+  "buildCommand": "pwd && ls -la && find . -name 'build.sh' && bash ./build.sh || (cd ../.. && bash build.sh)",
   "outputDirectory": "apps/web/dist",
   "installCommand": "echo 'Dependencies installed in build.sh'",
   "framework": null,
