@@ -1,34 +1,17 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "apps/web/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    },
-    {
-      "src": "api/index.js",
-      "use": "@vercel/node"
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "apps/web/dist",
+  "installCommand": "npm install --prefix apps/web && npm install --prefix apps/api",
+  "framework": null,
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 10
     }
-  ],
-  "routes": [
+  },
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/index.js"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/apps/web/dist/$1"
+      "source": "/api/:path*",
+      "destination": "/api/index.js"
     }
-  ],
-  "build": {
-    "env": {
-      "NODE_ENV": "production"
-    }
-  }
+  ]
 }
