@@ -4,14 +4,14 @@
   "installCommand": "echo 'Dependencies installed in build.sh'",
   "framework": null,
   "functions": {
-    "serverless/index.js": {
+    "../../serverless/index.js": {
       "maxDuration": 10
     }
   },
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/serverless/index.js"
+      "destination": "/../../serverless/index.js"
     }
   ]
 }
