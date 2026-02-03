@@ -10,13 +10,17 @@ export default async (req, res) => {
     method: req.method
   });
   
-  // Handle root path
+  // Handle root path - redirect to health
   if (req.url === '/' || req.url === '') {
     req.url = '/health';
   }
+  // Health endpoint stays as-is (it's at /health in Express)
+  else if (req.url.startsWith('/health')) {
+    // Keep as /health
+  }
   // For all other paths, add /api prefix since Vercel strips it
   // Express app expects routes like /api/users, /api/chat, etc.
-  else if (!req.url.startsWith('/api') && !req.url.startsWith('/health')) {
+  else if (!req.url.startsWith('/api')) {
     req.url = '/api' + req.url;
   }
   
