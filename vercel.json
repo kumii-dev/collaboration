@@ -1,17 +1,34 @@
 {
-  "buildCommand": "npm --prefix ../../apps/web install && npm --prefix ../../apps/web run build && npm install && npm run build",
-  "outputDirectory": "../../apps/web/dist",
-  "framework": "vite",
-  "installCommand": "echo 'Skipping root install'",
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 10
+  "version": 2,
+  "builds": [
+    {
+      "src": "apps/web/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
     }
-  },
+  ],
   "routes": [
     {
       "src": "/api/(.*)",
       "dest": "/api/index.js"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/apps/web/dist/$1"
     }
-  ]
+  ],
+  "build": {
+    "env": {
+      "NODE_ENV": "production"
+    }
+  }
 }
