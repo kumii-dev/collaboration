@@ -40,8 +40,8 @@ logs/
 **/*.spec.tsx
 coverage/
 
-# Build artifacts (will be rebuilt)
-dist/
+# Build artifacts
+# Note: apps/api/dist and apps/web/dist are built during deployment and needed!
 build/
 
 # SQL files
