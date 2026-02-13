@@ -1,6 +1,6 @@
 {
-  "buildCommand": "cd ../.. && pwd && ls -la && bash build.sh",
-  "outputDirectory": "apps/web/dist",
+  "buildCommand": "bash ../../build.sh",
+  "outputDirectory": "../../apps/web/dist",
   "installCommand": "echo 'Dependencies installed in build.sh'",
   "framework": null
 }
