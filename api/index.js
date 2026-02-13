@@ -1,5 +1,5 @@
 // Vercel Serverless Function Entry Point
-// This wraps the Express app and adds /api prefix to incoming requests
+// This wraps the Express app and handles routing
 
 let app;
 
@@ -20,37 +20,30 @@ async function getApp() {
 
 export default async (req, res) => {
   try {
-    // Log the incoming request for debugging
-    console.log('Serverless function received:', {
-      url: req.url,
+    // Debug: Log what Vercel sends us
+    const debugInfo = {
+      originalUrl: req.url,
+      path: req.path,
+      baseUrl: req.baseUrl,
       method: req.method
-    });
+    };
+    
+    console.log('📥 Received:', debugInfo);
     
     // Load the Express app
     const expressApp = await getApp();
     
-    // When Vercel routes /api/health to this function, req.url is /health
-    // When Vercel routes /api/forum/categories, req.url is /forum/categories
-    // Our Express app has routes at /health and /api/*
+    // When accessing /api/health, Vercel route "/api/(.*)" matches and forwards to this function
+    // Vercel strips /api prefix, so req.url becomes "/health"
+    // But we need to confirm this assumption
     
-    // Handle health check (Express has it at /health)
-    if (req.url === '/' || req.url === '') {
-      req.url = '/health';
-    }
-    else if (req.url === '/health' || req.url.startsWith('/health')) {
-      // Keep as-is, Express has /health at root level
-    }
-    // For all other paths, add /api prefix
-    else if (!req.url.startsWith('/api')) {
-      req.url = '/api' + req.url;
-    }
-    
-    console.log('Forwarding to Express app with URL:', req.url);
+    // Let's keep the URL as-is and let Express handle it
+    console.log('🔀 Forwarding to Express with URL:', req.url);
     
     // Forward the request to Express
     return expressApp(req, res);
   } catch (error) {
-    console.error('Serverless function error:', error);
+    console.error('❌ Serverless function error:', error);
     res.status(500).json({ 
       error: 'Internal Server Error',
       message: error.message,

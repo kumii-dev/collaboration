@@ -72,7 +72,19 @@ app.use((req, res, next) => {
 // ROUTES
 // =====================================================
 
+// Health check - accessible at both /health and /api/health for compatibility
 app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      environment: config.NODE_ENV,
+    },
+  });
+});
+
+app.get('/api/health', (req, res) => {
   res.json({
     success: true,
     data: {
