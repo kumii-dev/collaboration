@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, Button, Spinner, Form, InputGroup } from 'react-bootstrap';
-import { FiMessageSquare, FiStar, FiSearch, FiArrowRight, FiUsers, FiEye } from 'react-icons/fi';
+import { FiMessageSquare, FiStar, FiSearch, FiArrowRight, FiUsers, FiEye, FiDollarSign } from 'react-icons/fi';
+import { BsLightbulb, BsBarChartFill, BsBullseye, BsRocket, BsFolder } from 'react-icons/bs';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
@@ -71,12 +72,12 @@ export default function ForumPage() {
 
   const getCategoryColor = (index: number) => {
     const colors = [
-      { bg: '#10b981', icon: '💬' },
-      { bg: '#3b82f6', icon: '💰' },
-      { bg: '#f59e0b', icon: '💡' },
-      { bg: '#8b5cf6', icon: '📊' },
-      { bg: '#ef4444', icon: '🎯' },
-      { bg: '#06b6d4', icon: '🚀' }
+      { bg: '#10b981', IconComponent: FiMessageSquare },
+      { bg: '#3b82f6', IconComponent: FiDollarSign },
+      { bg: '#f59e0b', IconComponent: BsLightbulb },
+      { bg: '#8b5cf6', IconComponent: BsBarChartFill },
+      { bg: '#ef4444', IconComponent: BsBullseye },
+      { bg: '#06b6d4', IconComponent: BsRocket }
     ];
     return colors[index % colors.length];
   };
@@ -251,10 +252,14 @@ export default function ForumPage() {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: '24px'
+                          color: 'white'
                         }}
                       >
-                        {category.icon || colorScheme.icon}
+                        {category.icon ? (
+                          <span style={{ fontSize: '24px' }}>{category.icon}</span>
+                        ) : (
+                          <colorScheme.IconComponent size={24} />
+                        )}
                       </div>
                       <h6 className="mb-1" style={{ fontSize: '14px', fontWeight: '600' }}>
                         {category.name}
@@ -271,7 +276,7 @@ export default function ForumPage() {
             <Col xs={12}>
               <Card style={{ border: '2px dashed #e5e7eb', borderRadius: '12px', background: '#f8f9fa' }}>
                 <Card.Body className="text-center py-5">
-                  <div style={{ fontSize: '48px', marginBottom: '1rem' }}>📂</div>
+                  <BsFolder size={48} color="#9ca3af" style={{ marginBottom: '1rem' }} />
                   <h5 className="mb-2">No Categories Yet</h5>
                   <p className="text-muted mb-3">
                     Get started by creating your first discussion category

@@ -17,7 +17,8 @@ import {
   FiEye,
   FiClock,
   FiAward,
-  FiCheckCircle
+  FiCheckCircle,
+  FiLock
 } from 'react-icons/fi';
 import { format, formatDistanceToNow } from 'date-fns';
 import api from '../../lib/api';
@@ -508,7 +509,7 @@ export default function ThreadDetailPage() {
             )}
             {thread.is_locked && (
               <Badge bg="secondary" className="d-flex align-items-center gap-1">
-                🔒 Locked
+                <FiLock size={14} /> Locked
               </Badge>
             )}
             {thread.tags?.map((tag) => (
@@ -786,7 +787,7 @@ export default function ThreadDetailPage() {
         </Card>
       ) : (
         <Alert variant="warning" className="d-flex align-items-center gap-3 shadow-sm">
-          <div style={{ fontSize: '2rem' }}>🔒</div>
+          <FiLock size={32} color="#856404" />
           <div>
             <strong>This thread is locked</strong>
             <p className="mb-0 small">No new replies can be added. The discussion has been closed by a moderator.</p>

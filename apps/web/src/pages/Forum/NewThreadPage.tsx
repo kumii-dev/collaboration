@@ -549,13 +549,13 @@ export default function NewThreadPage() {
               <Form.Label>Icon (Optional)</Form.Label>
               <Form.Control
                 type="text"
-                placeholder="e.g., 💬 🚀 💡 (single emoji)"
+                placeholder="e.g., a single emoji or leave blank for default icon"
                 value={newCategoryIcon}
                 onChange={(e) => setNewCategoryIcon(e.target.value)}
                 maxLength={2}
               />
               <Form.Text className="text-muted">
-                Add a single emoji to represent this category
+                Add a single emoji to represent this category (or leave blank for a default Bootstrap icon)
               </Form.Text>
             </Form.Group>
 
