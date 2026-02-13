@@ -2,11 +2,5 @@
   "buildCommand": "bash ../../build.sh",
   "outputDirectory": "../../apps/web/dist",
   "installCommand": "echo 'Dependencies installed in build.sh'",
-  "framework": null,
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api"
-    }
-  ]
+  "framework": null
 }
