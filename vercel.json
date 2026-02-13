@@ -1,17 +1,6 @@
 {
-  "buildCommand": "pwd && ls -la && find . -name 'build.sh' && bash ./build.sh || (cd ../.. && bash build.sh)",
+  "buildCommand": "pwd && ls -la && bash build.sh",
   "outputDirectory": "../../apps/web/dist",
   "installCommand": "echo 'Dependencies installed in build.sh'",
-  "framework": null,
-  "functions": {
-    "../../serverless/index.js": {
-      "maxDuration": 10
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "/../../serverless/index.js"
-    }
-  ]
+  "framework": null
 }
