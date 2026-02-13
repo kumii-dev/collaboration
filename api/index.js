@@ -5,26 +5,29 @@ import app from '../apps/api/dist/index.js';
 
 export default async (req, res) => {
   // Log the incoming request for debugging
-  console.log('Incoming request:', {
-    originalUrl: req.url,
-    method: req.method
+  console.log('Serverless function received:', {
+    url: req.url,
+    method: req.method,
+    headers: req.headers
   });
   
-  // Handle root path - redirect to health
+  // When Vercel routes /api/health to this function, req.url is /health
+  // When Vercel routes /api/forum/categories, req.url is /forum/categories
+  // Our Express app has routes at /health and /api/*
+  
+  // Handle health check (Express has it at /health)
   if (req.url === '/' || req.url === '') {
     req.url = '/health';
   }
-  // Health endpoint stays as-is (it's at /health in Express)
-  else if (req.url.startsWith('/health')) {
-    // Keep as /health
+  else if (req.url === '/health' || req.url.startsWith('/health')) {
+    // Keep as-is, Express has /health at root level
   }
-  // For all other paths, add /api prefix since Vercel strips it
-  // Express app expects routes like /api/users, /api/chat, etc.
+  // For all other paths, add /api prefix
   else if (!req.url.startsWith('/api')) {
     req.url = '/api' + req.url;
   }
   
-  console.log('Modified URL:', req.url);
+  console.log('Forwarding to Express app with URL:', req.url);
   
   return app(req, res);
 };
