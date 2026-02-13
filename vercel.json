@@ -1,12 +1,12 @@
 {
-  "buildCommand": "bash ../../build.sh",
-  "outputDirectory": "../../apps/web/dist",
+  "buildCommand": "bash build.sh",
+  "outputDirectory": "apps/web/dist",
   "installCommand": "echo 'Dependencies installed in build.sh'",
   "framework": null,
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/../../api/index.js"
+      "dest": "/api/index.js"
     }
   ]
 }
