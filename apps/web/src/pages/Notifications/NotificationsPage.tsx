@@ -73,10 +73,10 @@ export default function NotificationsPage() {
 
   const getNotificationIcon = (type: string) => {
     const icons: Record<string, JSX.Element> = {
-      mention: <FiMessageSquare className="text-primary" />,
-      reply: <FiMessageSquare className="text-info" />,
-      vote: <FiThumbsUp className="text-success" />,
-      message: <FiBell className="text-warning" />,
+      mention: <FiMessageSquare style={{ color: '#7a8567' }} />,
+      reply: <FiMessageSquare style={{ color: '#7a8567' }} />,
+      vote: <FiThumbsUp style={{ color: '#c5df96' }} />,
+      message: <FiBell style={{ color: '#E67E50' }} />,
       system: <FiAlertCircle className="text-danger" />
     };
     return icons[type] || <FiBell />;
@@ -106,7 +106,7 @@ export default function NotificationsPage() {
         </div>
         {unreadCount > 0 && (
           <Button
-            variant="outline-primary"
+            style={{ background: 'transparent', borderColor: '#7a8567', color: '#7a8567' }}
             size="sm"
             onClick={() => markAllAsReadMutation.mutate()}
             disabled={markAllAsReadMutation.isLoading}
@@ -163,7 +163,7 @@ export default function NotificationsPage() {
                         <h6 className="mb-1">
                           {notification.title}
                           {!notification.is_read && (
-                            <Badge bg="primary" className="ms-2">
+                            <Badge style={{ background: '#7a8567' }} className="ms-2">
                               New
                             </Badge>
                           )}
@@ -258,7 +258,7 @@ export default function NotificationsPage() {
                       <div className="flex-grow-1">
                         <h6 className="mb-1">
                           {notification.title}
-                          <Badge bg="primary" className="ms-2">
+                          <Badge style={{ background: '#7a8567' }} className="ms-2">
                             New
                           </Badge>
                         </h6>

@@ -280,7 +280,7 @@ export default function NewThreadPage() {
                   variant="outline-success"
                   size="sm"
                   onClick={() => setShowCategoryModal(true)}
-                  style={{ borderRadius: '20px' }}
+                  style={{ borderRadius: '20px', borderColor: '#7a8567', color: '#7a8567' }}
                 >
                   <FiPlus className="me-1" />
                   Add New Category
@@ -304,9 +304,9 @@ export default function NewThreadPage() {
                         onChange={() => handleCategoryChange(category.id)}
                       />
                       <label
-                        className="btn btn-outline-primary"
+                        className="btn"
                         htmlFor={`category-${category.id}`}
-                        style={{ borderRadius: '20px' }}
+                        style={{ borderRadius: '20px', borderColor: '#7a8567', color: '#7a8567', borderWidth: '1px', borderStyle: 'solid' }}
                       >
                         {category.name}
                       </label>
@@ -330,7 +330,7 @@ export default function NewThreadPage() {
                     variant="outline-success"
                     size="sm"
                     onClick={() => setShowBoardModal(true)}
-                    style={{ borderRadius: '20px' }}
+                    style={{ borderRadius: '20px', borderColor: '#7a8567', color: '#7a8567' }}
                   >
                     <FiPlus className="me-1" />
                     Add New Board
@@ -354,9 +354,9 @@ export default function NewThreadPage() {
                           onChange={() => setSelectedBoardId(board.id)}
                         />
                         <label
-                          className="btn btn-outline-success"
+                          className="btn"
                           htmlFor={`board-${board.id}`}
-                          style={{ borderRadius: '20px' }}
+                          style={{ borderRadius: '20px', borderColor: '#7a8567', color: '#7a8567', borderWidth: '1px', borderStyle: 'solid' }}
                         >
                           {board.name}
                         </label>
@@ -446,6 +446,7 @@ export default function NewThreadPage() {
               <Button
                 variant="success"
                 type="submit"
+                style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
                 disabled={createThreadMutation.isLoading || !selectedBoardId || !title || !content}
               >
                 {createThreadMutation.isLoading ? (
@@ -473,7 +474,7 @@ export default function NewThreadPage() {
       </Card>
 
       {/* Guidelines */}
-      <Card className="mt-4" style={{ background: '#f8f9fa' }}>
+      <Card className="mt-4" style={{ background: '#F5F5F3' }}>
         <Card.Body>
           <h6 className="fw-bold mb-3">Discussion Guidelines</h6>
           <ul className="mb-0" style={{ fontSize: '14px' }}>
@@ -576,6 +577,7 @@ export default function NewThreadPage() {
               <Button
                 variant="success"
                 type="submit"
+                style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
                 disabled={createCategoryMutation.isLoading || !newCategoryName.trim() || !newCategoryDescription.trim()}
               >
                 {createCategoryMutation.isLoading ? (
@@ -677,6 +679,7 @@ export default function NewThreadPage() {
               <Button
                 variant="success"
                 type="submit"
+                style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
                 disabled={createBoardMutation.isLoading || !newBoardName.trim() || !newBoardDescription.trim()}
               >
                 {createBoardMutation.isLoading ? (

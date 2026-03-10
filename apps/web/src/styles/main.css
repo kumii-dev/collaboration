@@ -1,13 +1,22 @@
 :root {
-  --primary-color: #4f46e5;
-  --secondary-color: #6b7280;
-  --success-color: #10b981;
+  --primary-color: #7a8567;
+  --secondary-color: #666666;
+  --success-color: #c5df96;
   --danger-color: #ef4444;
-  --warning-color: #f59e0b;
-  --info-color: #3b82f6;
-  --light-bg: #f9fafb;
-  --dark-text: #111827;
-  --border-color: #e5e7eb;
+  --warning-color: #E67E50;
+  --info-color: #7a8567;
+  --light-bg: #F5F5F3;
+  --dark-text: #2D2D2D;
+  --border-color: #E5E5E3;
+  --sage-green: #c5df96;
+  --olive-green: #7a8567;
+  --orange: #E67E50;
+  --orange-hover: #D46D41;
+  --gray-light: #F5F5F3;
+  --gray-medium: #E5E5E3;
+  --gray-dark: #5A5A5A;
+  --text-primary: #2D2D2D;
+  --text-secondary: #666666;
 }
 
 * {
@@ -286,7 +295,7 @@ code {
 }
 
 .conversation-item.active {
-  background-color: var(--primary-color);
+  background-color: #7a8567;
   color: white;
 }
 
@@ -316,7 +325,7 @@ code {
 }
 
 .message.own .message-bubble {
-  background-color: var(--primary-color);
+  background-color: #7a8567;
   color: white;
 }
 
@@ -331,7 +340,7 @@ code {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary-color), var(--info-color));
+  background: linear-gradient(135deg, #7a8567, #c5df96);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -373,11 +382,11 @@ code {
 }
 
 .conversation-item:hover {
-  background-color: rgba(79, 70, 229, 0.05);
+  background-color: rgba(122, 133, 103, 0.05);
 }
 
 .conversation-item.active {
-  background-color: rgba(79, 70, 229, 0.1);
+  background-color: rgba(122, 133, 103, 0.1);
 }
 
 /* Messages Container */
@@ -455,7 +464,7 @@ code {
 }
 
 .board-item:hover {
-  background-color: rgba(79, 70, 229, 0.05);
+  background-color: rgba(122, 133, 103, 0.05);
 }
 
 .thread-item {
@@ -464,7 +473,7 @@ code {
 }
 
 .thread-item:hover {
-  background-color: rgba(79, 70, 229, 0.05);
+  background-color: rgba(122, 133, 103, 0.05);
   border-left-color: var(--primary-color);
 }
 
@@ -524,14 +533,14 @@ code {
 .notification {
   padding: 15px;
   background-color: white;
-  border-left: 4px solid var(--info-color);
+  border-left: 4px solid #c5df96;
   margin-bottom: 10px;
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .notification.unread {
-  background-color: #eff6ff;
+  background-color: #f0f7e6;
   font-weight: 500;
 }
 
@@ -540,8 +549,8 @@ code {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  background-color: #dbeafe;
-  color: var(--info-color);
+  background-color: #e8f0e0;
+  color: #7a8567;
   border-radius: 12px;
   font-size: 12px;
   font-weight: 600;
@@ -693,8 +702,8 @@ code {
 
 /* Reply form focus state */
 .thread-detail-page .form-control:focus {
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 0.25rem rgba(79, 70, 229, 0.15);
+  border-color: #7a8567;
+  box-shadow: 0 0 0 0.25rem rgba(122, 133, 103, 0.15);
 }
 
 /* Solution badge glow effect */
@@ -704,10 +713,10 @@ code {
 
 @keyframes pulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4);
+    box-shadow: 0 0 0 0 rgba(197, 223, 150, 0.5);
   }
   50% {
-    box-shadow: 0 0 0 6px rgba(40, 167, 69, 0);
+    box-shadow: 0 0 0 6px rgba(197, 223, 150, 0);
   }
 }
 

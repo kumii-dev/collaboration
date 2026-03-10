@@ -72,12 +72,12 @@ export default function ForumPage() {
 
   const getCategoryColor = (index: number) => {
     const colors = [
-      { bg: '#10b981', IconComponent: FiMessageSquare },
-      { bg: '#3b82f6', IconComponent: FiDollarSign },
-      { bg: '#f59e0b', IconComponent: BsLightbulb },
-      { bg: '#8b5cf6', IconComponent: BsBarChartFill },
-      { bg: '#ef4444', IconComponent: BsBullseye },
-      { bg: '#06b6d4', IconComponent: BsRocket }
+      { bg: '#7a8567', IconComponent: FiMessageSquare },
+      { bg: '#c5df96', IconComponent: FiDollarSign },
+      { bg: '#E67E50', IconComponent: BsLightbulb },
+      { bg: '#7a8567', IconComponent: BsBarChartFill },
+      { bg: '#E67E50', IconComponent: BsBullseye },
+      { bg: '#c5df96', IconComponent: BsRocket }
     ];
     return colors[index % colors.length];
   };
@@ -87,12 +87,12 @@ export default function ForumPage() {
   const isLoading = activeFilter === 'trending' ? loadingTrending : false;
 
   return (
-    <div style={{ background: '#f8f9fa', minHeight: 'calc(100vh - 100px)', padding: '2rem 0' }}>
+    <div style={{ background: '#F5F5F3', minHeight: 'calc(100vh - 100px)', padding: '2rem 0' }}>
       {/* Header Section */}
       <div className="container">
         <div className="text-center mb-4">
           <div className="d-inline-flex align-items-center gap-2 mb-3 px-3 py-2" 
-               style={{ background: '#e5e7eb', borderRadius: '20px' }}>
+               style={{ background: '#E5E5E3', borderRadius: '20px' }}>
             <FiMessageSquare size={18} />
             <span style={{ fontSize: '14px', fontWeight: '500' }}>
               Browse discussion topics and connect with the community
@@ -102,7 +102,7 @@ export default function ForumPage() {
           <h1 style={{ 
             fontSize: '3rem', 
             fontWeight: '300',
-            color: '#a3b18a',
+            color: '#7a8567',
             marginBottom: '1rem',
             letterSpacing: '-1px'
           }}>
@@ -111,7 +111,7 @@ export default function ForumPage() {
           
           <p style={{ 
             fontSize: '1.1rem', 
-            color: '#6b7280',
+            color: '#666666',
             maxWidth: '700px',
             margin: '0 auto 2rem'
           }}>
@@ -127,7 +127,9 @@ export default function ForumPage() {
               style={{
                 borderRadius: '8px',
                 padding: '12px 32px',
-                fontWeight: '500'
+                fontWeight: '500',
+                background: '#7a8567',
+                borderColor: '#7a8567'
               }}
               onClick={() => navigate('/forum/new-thread')}
             >
@@ -174,7 +176,7 @@ export default function ForumPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{ border: '1px solid #dee2e6' }}
               />
-              <Button variant="success">
+              <Button style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}>
                 Search
               </Button>
             </InputGroup>
@@ -227,7 +229,7 @@ export default function ForumPage() {
                     className="text-center h-100" 
                     style={{ 
                       cursor: 'pointer',
-                      border: '1px solid #e5e7eb',
+                      border: '1px solid #E5E5E3',
                       transition: 'all 0.2s',
                       borderRadius: '12px'
                     }}
@@ -264,7 +266,7 @@ export default function ForumPage() {
                       <h6 className="mb-1" style={{ fontSize: '14px', fontWeight: '600' }}>
                         {category.name}
                       </h6>
-                      <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                      <div style={{ fontSize: '12px', color: '#666666' }}>
                         {category.board_count} available
                       </div>
                     </Card.Body>
@@ -274,9 +276,9 @@ export default function ForumPage() {
             })
           ) : (
             <Col xs={12}>
-              <Card style={{ border: '2px dashed #e5e7eb', borderRadius: '12px', background: '#f8f9fa' }}>
+              <Card style={{ border: '2px dashed #E5E5E3', borderRadius: '12px', background: '#F5F5F3' }}>
                 <Card.Body className="text-center py-5">
-                  <BsFolder size={48} color="#9ca3af" style={{ marginBottom: '1rem' }} />
+                  <BsFolder size={48} color="#7a8567" style={{ marginBottom: '1rem' }} />
                   <h5 className="mb-2">No Categories Yet</h5>
                   <p className="text-muted mb-3">
                     Get started by creating your first discussion category
@@ -284,7 +286,7 @@ export default function ForumPage() {
                   <Button
                     variant="success"
                     onClick={() => navigate('/forum/new-thread')}
-                    style={{ borderRadius: '20px' }}
+                    style={{ borderRadius: '20px', background: '#7a8567', borderColor: '#7a8567' }}
                   >
                     Create First Category
                   </Button>
@@ -301,7 +303,7 @@ export default function ForumPage() {
           </h3>
           <Button 
             variant="success" 
-            style={{ borderRadius: '20px' }}
+            style={{ borderRadius: '20px', background: '#7a8567', borderColor: '#7a8567' }}
             onClick={() => setActiveFilter('all')}
           >
             View All <FiArrowRight className="ms-1" />
@@ -321,7 +323,7 @@ export default function ForumPage() {
                   className="h-100" 
                   style={{ 
                     cursor: 'pointer',
-                    border: '1px solid #e5e7eb',
+                    border: '1px solid #E5E5E3',
                     borderRadius: '12px',
                     transition: 'all 0.2s'
                   }}
@@ -343,7 +345,7 @@ export default function ForumPage() {
                           width: '48px',
                           height: '48px',
                           borderRadius: '12px',
-                          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                          background: '#7a8567',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -372,7 +374,7 @@ export default function ForumPage() {
                       style={{ 
                         fontSize: '1.1rem',
                         fontWeight: '600',
-                        color: '#111827',
+                        color: '#2D2D2D',
                         lineHeight: '1.4'
                       }}
                     >
@@ -405,16 +407,16 @@ export default function ForumPage() {
                     <div className="mb-3">
                       <Row>
                         <Col xs={6}>
-                          <div style={{ fontSize: '13px', color: '#6b7280' }}>
-                            <strong style={{ color: '#10b981', fontSize: '16px' }}>
+                          <div style={{ fontSize: '13px', color: '#666666' }}>
+                            <strong style={{ color: '#7a8567', fontSize: '16px' }}>
                               {thread.vote_score > 0 ? `+${thread.vote_score}` : thread.vote_score}
                             </strong>
                             <div>Votes</div>
                           </div>
                         </Col>
                         <Col xs={6}>
-                          <div style={{ fontSize: '13px', color: '#6b7280' }}>
-                            <strong style={{ fontSize: '16px', color: '#111827' }}>
+                          <div style={{ fontSize: '13px', color: '#666666' }}>
+                            <strong style={{ fontSize: '16px', color: '#2D2D2D' }}>
                               {thread.reply_count}
                             </strong>
                             <div>Replies</div>
@@ -427,9 +429,9 @@ export default function ForumPage() {
                     <div 
                       className="pt-3" 
                       style={{ 
-                        borderTop: '1px solid #e5e7eb',
+                        borderTop: '1px solid #E5E5E3',
                         fontSize: '13px',
-                        color: '#6b7280'
+                        color: '#666666'
                       }}
                     >
                       <div className="d-flex justify-content-between align-items-center">
@@ -451,7 +453,9 @@ export default function ForumPage() {
                       style={{
                         borderRadius: '8px',
                         padding: '10px',
-                        fontWeight: '600'
+                        fontWeight: '600',
+                        background: '#E67E50',
+                        borderColor: '#E67E50'
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -471,9 +475,9 @@ export default function ForumPage() {
         {/* Stats Section */}
         <Row className="mt-5 mb-4">
           <Col md={4}>
-            <Card className="text-center" style={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+            <Card className="text-center" style={{ border: '1px solid #E5E5E3', borderRadius: '12px' }}>
               <Card.Body className="py-4">
-                <h2 className="display-4 fw-bold mb-0" style={{ color: '#10b981' }}>
+                <h2 className="display-4 fw-bold mb-0" style={{ color: '#7a8567' }}>
                   {categories?.length || 0}
                 </h2>
                 <p className="text-muted mb-0">Discussion Categories</p>
@@ -481,9 +485,9 @@ export default function ForumPage() {
             </Card>
           </Col>
           <Col md={4}>
-            <Card className="text-center" style={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+            <Card className="text-center" style={{ border: '1px solid #E5E5E3', borderRadius: '12px' }}>
               <Card.Body className="py-4">
-                <h2 className="display-4 fw-bold mb-0" style={{ color: '#3b82f6' }}>
+                <h2 className="display-4 fw-bold mb-0" style={{ color: '#c5df96' }}>
                   {trendingThreads?.length || 0}
                 </h2>
                 <p className="text-muted mb-0">Active Discussions</p>
@@ -491,9 +495,9 @@ export default function ForumPage() {
             </Card>
           </Col>
           <Col md={4}>
-            <Card className="text-center" style={{ border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+            <Card className="text-center" style={{ border: '1px solid #E5E5E3', borderRadius: '12px' }}>
               <Card.Body className="py-4">
-                <h2 className="display-4 fw-bold mb-0" style={{ color: '#f59e0b' }}>
+                <h2 className="display-4 fw-bold mb-0" style={{ color: '#E67E50' }}>
                   {displayThreads?.reduce((sum, t) => sum + t.reply_count, 0) || 0}
                 </h2>
                 <p className="text-muted mb-0">Total Replies</p>

@@ -228,7 +228,7 @@ export default function ChatPage() {
         <div className="col-md-4 border-end">
           <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
             <h5 className="mb-0">Messages</h5>
-            <Button variant="primary" size="sm" onClick={() => setShowNewChatModal(true)}>
+            <Button style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }} size="sm" onClick={() => setShowNewChatModal(true)}>
               New Chat
             </Button>
           </div>
@@ -276,7 +276,7 @@ export default function ChatPage() {
                           {conversation.last_message?.content || 'No messages yet'}
                         </small>
                         {conversation.unread_count && conversation.unread_count > 0 && (
-                          <Badge bg="primary" pill>
+                          <Badge style={{ background: '#7a8567' }} pill>
                             {conversation.unread_count}
                           </Badge>
                         )}
@@ -326,7 +326,7 @@ export default function ChatPage() {
                 style={{
                   overflowY: 'auto',
                   height: 'calc(100% - 140px)',
-                  backgroundColor: '#f8f9fa'
+                  backgroundColor: '#F5F5F3'
                 }}
               >
                 {loadingMessages && (
@@ -357,8 +357,9 @@ export default function ChatPage() {
                           )}
                           <div
                             className={`p-3 rounded ${
-                              isOwnMessage ? 'bg-primary text-white' : 'bg-white'
+                              isOwnMessage ? 'text-white' : 'bg-white'
                             }`}
+                            style={isOwnMessage ? { background: '#7a8567' } : {}}
                           >
                             <p className="mb-0" style={{ whiteSpace: 'pre-wrap' }}>
                               {message.content}
@@ -407,7 +408,7 @@ export default function ChatPage() {
                     </Button>
                     <Button
                       type="submit"
-                      variant="primary"
+                      style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
                       disabled={!messageText.trim() || sendMessageMutation.isLoading}
                     >
                       {sendMessageMutation.isLoading ? (
@@ -493,7 +494,7 @@ export default function ChatPage() {
             Cancel
           </Button>
           <Button
-            variant="primary"
+            style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
             onClick={handleCreateConversation}
             disabled={!selectedUser || createConversationMutation.isLoading}
           >

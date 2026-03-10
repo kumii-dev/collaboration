@@ -155,7 +155,7 @@ export default function ModerationPage() {
           <h2 className="mb-0">Moderation Dashboard</h2>
           <p className="text-muted mb-0">Manage reports and moderate content</p>
         </div>
-        <Badge bg="primary" className="fs-6">
+        <Badge style={{ background: '#7a8567' }} className="fs-6">
           <FiShield className="me-1" />
           Moderator
         </Badge>
@@ -329,7 +329,7 @@ export default function ModerationPage() {
 
                       <div className="d-flex gap-2">
                         <Button
-                          variant="primary"
+                          style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
                           onClick={handleSubmitAction}
                           disabled={handleActionMutation.isLoading || !actionForm.reason.trim()}
                         >

@@ -130,10 +130,10 @@ export default function ProfilePage() {
 
   const getActivityIcon = (type: string) => {
     const icons: Record<string, JSX.Element> = {
-      thread: <FiMail className="text-primary" />,
-      post: <FiMail className="text-info" />,
-      message: <FiMail className="text-success" />,
-      vote: <FiAward className="text-warning" />
+      thread: <FiMail style={{ color: '#7a8567' }} />,
+      post: <FiMail style={{ color: '#7a8567' }} />,
+      message: <FiMail style={{ color: '#c5df96' }} />,
+      vote: <FiAward style={{ color: '#E67E50' }} />
     };
     return icons[type] || <FiMail />;
   };
@@ -184,7 +184,7 @@ export default function ProfilePage() {
                   <p className="text-muted mb-2">{profile.email}</p>
                   <div className="d-flex align-items-center gap-4">
                     <div>
-                      <strong className="text-primary fs-4">{profile.reputation_score}</strong>
+                      <strong className="fs-4" style={{ color: '#7a8567' }}>{profile.reputation_score}</strong>
                       <small className="text-muted ms-1">reputation</small>
                     </div>
                     <div className="vr"></div>
@@ -231,7 +231,7 @@ export default function ProfilePage() {
                   <h5 className="mb-0">Personal Information</h5>
                   {!isEditing ? (
                     <Button
-                      variant="outline-primary"
+                      style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
                       size="sm"
                       onClick={() => setIsEditing(true)}
                     >
@@ -350,7 +350,7 @@ export default function ProfilePage() {
                         <Col md={6}>
                           <div className="mb-2">
                             <strong>Reputation:</strong>{' '}
-                            <span className="text-primary">{profile.reputation_score} points</span>
+                            <span style={{ color: '#7a8567' }}>{profile.reputation_score} points</span>
                           </div>
                           <div className="mb-2">
                             <strong>Member Since:</strong>{' '}
@@ -501,7 +501,7 @@ export default function ProfilePage() {
                     className="mb-4"
                   />
 
-                  <Button variant="primary">
+                  <Button style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}>
                     <FiSave className="me-1" /> Save Settings
                   </Button>
                 </Card.Body>

@@ -88,7 +88,7 @@ export default function LoginPage() {
                 </Form.Group>
 
                 <Button
-                  variant="primary"
+                  style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
                   type="submit"
                   className="w-100 mb-3"
                   disabled={loading}

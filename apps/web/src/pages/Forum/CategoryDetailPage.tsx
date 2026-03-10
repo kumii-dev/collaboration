@@ -112,7 +112,7 @@ export default function CategoryDetailPage() {
   if (isLoading) {
     return (
       <div className="text-center py-5">
-        <Spinner animation="border" variant="primary" />
+        <Spinner animation="border" style={{ color: '#7a8567' }} />
         <p className="mt-3 text-muted">Loading category...</p>
       </div>
     );
@@ -126,7 +126,7 @@ export default function CategoryDetailPage() {
         <p className="text-muted">
           {error?.response?.data?.error || error?.message || 'Failed to load category data'}
         </p>
-        <Button variant="primary" onClick={() => navigate('/forum')}>
+        <Button style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }} onClick={() => navigate('/forum')}>
           Back to Forum
         </Button>
       </div>
@@ -138,7 +138,7 @@ export default function CategoryDetailPage() {
       <div className="text-center py-5">
         <h3>Category not found</h3>
         <p className="text-muted">The category you're looking for doesn't exist.</p>
-        <Button variant="primary" onClick={() => navigate('/forum')}>
+        <Button style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }} onClick={() => navigate('/forum')}>
           Back to Forum
         </Button>
       </div>
@@ -159,7 +159,7 @@ export default function CategoryDetailPage() {
           </div>
           <div className="d-flex gap-2">
             <Button 
-              variant="primary" 
+              style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
               onClick={() => navigate('/forum/new-thread')}
             >
               Start New Thread
@@ -208,7 +208,7 @@ export default function CategoryDetailPage() {
                       <strong>{board.name}</strong>
                       <div className="small text-muted">{board.description}</div>
                       {board.is_private && (
-                        <Badge bg="warning" className="mt-1">
+                        <Badge style={{ background: '#E67E50' }} className="mt-1">
                           Private
                         </Badge>
                       )}
@@ -235,13 +235,13 @@ export default function CategoryDetailPage() {
             <ListGroup variant="flush">
               {loadingThreads ? (
                 <ListGroup.Item className="text-center py-4">
-                  <Spinner animation="border" size="sm" variant="primary" />
+                  <Spinner animation="border" size="sm" style={{ color: '#7a8567' }} />
                 </ListGroup.Item>
               ) : threadsError ? (
                 <ListGroup.Item className="text-center py-4">
                   <p className="text-danger mb-2">Failed to load threads</p>
                   <Button
-                    variant="outline-primary"
+                    style={{ background: 'transparent', borderColor: '#7a8567', color: '#7a8567' }}
                     size="sm"
                     onClick={() => window.location.reload()}
                   >
@@ -279,7 +279,7 @@ export default function CategoryDetailPage() {
                         </div>
                       </div>
                       {thread.vote_score > 0 && (
-                        <Badge bg="success" className="ms-2">
+                        <Badge style={{ background: '#7a8567' }} className="ms-2">
                           +{thread.vote_score}
                         </Badge>
                       )}

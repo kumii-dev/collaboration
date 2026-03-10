@@ -277,8 +277,8 @@ export default function ThreadDetailPage() {
       key={post.id}
       className={`mb-3 shadow-sm border-0 ${isNested ? 'ms-4 ms-md-5' : ''}`}
       style={{ 
-        borderLeft: post.is_solution ? '4px solid #28a745' : isNested ? '3px solid #e9ecef' : 'none',
-        backgroundColor: post.is_solution ? '#f8fff8' : 'white'
+        borderLeft: post.is_solution ? '4px solid #c5df96' : isNested ? '3px solid #e9ecef' : 'none',
+        backgroundColor: post.is_solution ? '#f0f7e6' : 'white'
       }}
     >
       <Card.Body className="p-4">
@@ -296,8 +296,10 @@ export default function ThreadDetailPage() {
               <FiThumbsUp size={20} />
             </Button>
             <strong 
-              className={`my-1 ${post.vote_score > 0 ? 'text-success' : post.vote_score < 0 ? 'text-danger' : 'text-muted'}`}
-              style={{ fontSize: '1.1rem' }}
+              style={{ 
+                fontSize: '1.1rem',
+                color: post.vote_score > 0 ? '#7a8567' : post.vote_score < 0 ? '#ef4444' : '#666666'
+              }}
             >
               {post.vote_score}
             </strong>
@@ -324,7 +326,7 @@ export default function ThreadDetailPage() {
                     width: '40px', 
                     height: '40px', 
                     borderRadius: '50%', 
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    background: 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)',
                     color: 'white',
                     display: 'flex',
                     alignItems: 'center',
@@ -451,7 +453,7 @@ export default function ThreadDetailPage() {
       <Alert variant="danger">
         <h5>Thread not found</h5>
         <p>The thread you're looking for doesn't exist or has been removed.</p>
-        <Button variant="primary" onClick={() => navigate('/forum')}>
+        <Button style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }} onClick={() => navigate('/forum')}>
           <FiArrowLeft className="me-1" /> Back to Forum
         </Button>
       </Alert>
@@ -474,7 +476,7 @@ export default function ThreadDetailPage() {
                 Forum
               </Button>
               <span className="text-muted">/</span>
-              <span className="text-primary fw-semibold">{thread.board_name}</span>
+              <span style={{ color: '#7a8567' }} className="fw-semibold">{thread.board_name}</span>
             </div>
             <div className="d-flex gap-2">
               <OverlayTrigger placement="top" overlay={<Tooltip>Share thread</Tooltip>}>
@@ -513,7 +515,7 @@ export default function ThreadDetailPage() {
               </Badge>
             )}
             {thread.tags?.map((tag) => (
-              <Badge key={tag} bg="primary" className="px-3 py-2" style={{ fontWeight: 'normal' }}>
+              <Badge key={tag} className="px-3 py-2" style={{ fontWeight: 'normal', background: '#7a8567' }}>
                 #{tag}
               </Badge>
             ))}
@@ -533,7 +535,7 @@ export default function ThreadDetailPage() {
                   width: '48px', 
                   height: '48px', 
                   borderRadius: '50%', 
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  background: 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)',
                   color: 'white',
                   display: 'flex',
                   alignItems: 'center',
@@ -548,7 +550,7 @@ export default function ThreadDetailPage() {
               <div>
                 <div className="d-flex align-items-center gap-2">
                   <strong style={{ fontSize: '1.1rem' }}>{thread.author_name}</strong>
-                  <Badge bg="info" className="d-flex align-items-center gap-1">
+                  <Badge className="d-flex align-items-center gap-1" style={{ background: '#7a8567' }}>
                     <FiAward size={12} /> Author
                   </Badge>
                 </div>
@@ -576,7 +578,7 @@ export default function ThreadDetailPage() {
               </div>
               <div className="text-center">
                 <div className="text-muted small"><FiThumbsUp size={16} /></div>
-                <strong className={thread.vote_score > 0 ? 'text-success' : thread.vote_score < 0 ? 'text-danger' : ''}>
+                <strong style={{ color: thread.vote_score > 0 ? '#7a8567' : thread.vote_score < 0 ? '#ef4444' : 'inherit' }}>
                   {thread.vote_score}
                 </strong>
                 <div className="text-muted small">votes</div>
@@ -589,11 +591,11 @@ export default function ThreadDetailPage() {
             className="thread-content p-4 mb-4" 
             style={{ 
               whiteSpace: 'pre-wrap',
-              backgroundColor: '#f8f9fa',
+              backgroundColor: '#F5F5F3',
               borderRadius: '8px',
               fontSize: '1.05rem',
               lineHeight: '1.7',
-              border: '1px solid #e9ecef'
+              border: '1px solid #E5E5E3'
             }}
           >
             {thread.content}
@@ -692,7 +694,7 @@ export default function ThreadDetailPage() {
       {/* Enhanced Reply Form */}
       {!thread.is_locked ? (
         <Card className="mt-4 shadow-sm border-0" style={{ position: 'sticky', bottom: '20px', zIndex: 10 }}>
-          <Card.Header className="bg-primary text-white">
+          <Card.Header style={{ background: '#7a8567' }} className="text-white">
             <h6 className="mb-0 d-flex align-items-center gap-2">
               <FiMessageSquare />
               {replyToPostId ? 'Reply to Comment' : 'Add Your Reply'}
@@ -703,7 +705,7 @@ export default function ThreadDetailPage() {
               <Alert 
                 variant="info" 
                 className="d-flex justify-content-between align-items-center mb-3"
-                style={{ borderLeft: '4px solid #0dcaf0' }}
+                style={{ borderLeft: '4px solid #7a8567' }}
               >
                 <span className="d-flex align-items-center gap-2">
                   <FiMessageSquare />
@@ -764,7 +766,7 @@ export default function ThreadDetailPage() {
                   )}
                   <Button
                     type="submit"
-                    variant="primary"
+                    style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
                     size="lg"
                     disabled={!replyContent.trim() || replyMutation.isLoading}
                     className="px-4"
@@ -787,7 +789,7 @@ export default function ThreadDetailPage() {
         </Card>
       ) : (
         <Alert variant="warning" className="d-flex align-items-center gap-3 shadow-sm">
-          <FiLock size={32} color="#856404" />
+          <FiLock size={32} color="#7a8567" />
           <div>
             <strong>This thread is locked</strong>
             <p className="mb-0 small">No new replies can be added. The discussion has been closed by a moderator.</p>

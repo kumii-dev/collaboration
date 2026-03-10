@@ -68,10 +68,10 @@ export default function DashboardPage() {
 
   const getActivityIcon = (type: string) => {
     const icons: Record<string, JSX.Element> = {
-      message: <FiMessageSquare className="text-primary" />,
-      thread: <FiActivity className="text-success" />,
-      post: <FiActivity className="text-info" />,
-      vote: <FiTrendingUp className="text-warning" />
+      message: <FiMessageSquare style={{ color: '#7a8567' }} />,
+      thread: <FiActivity style={{ color: '#7a8567' }} />,
+      post: <FiActivity style={{ color: '#7a8567' }} />,
+      vote: <FiTrendingUp style={{ color: '#E67E50' }} />
     };
     return icons[type] || <FiActivity />;
   };
@@ -98,10 +98,10 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div
-                  className="rounded-circle bg-primary bg-opacity-10 p-3"
-                  style={{ width: '60px', height: '60px' }}
+                  className="rounded-circle p-3"
+                  style={{ width: '60px', height: '60px', background: 'rgba(122,133,103,0.1)' }}
                 >
-                  <FiMessageSquare size={24} className="text-primary" />
+                  <FiMessageSquare size={24} style={{ color: '#7a8567' }} />
                 </div>
               </div>
               {stats && stats.unread_messages > 0 && (
@@ -126,10 +126,10 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div
-                  className="rounded-circle bg-success bg-opacity-10 p-3"
-                  style={{ width: '60px', height: '60px' }}
+                  className="rounded-circle p-3"
+                  style={{ width: '60px', height: '60px', background: 'rgba(197,223,150,0.2)' }}
                 >
-                  <FiActivity size={24} className="text-success" />
+                  <FiActivity size={24} style={{ color: '#7a8567' }} />
                 </div>
               </div>
             </Card.Body>
@@ -149,10 +149,10 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div
-                  className="rounded-circle bg-warning bg-opacity-10 p-3"
-                  style={{ width: '60px', height: '60px' }}
+                  className="rounded-circle p-3"
+                  style={{ width: '60px', height: '60px', background: 'rgba(230,126,80,0.1)' }}
                 >
-                  <FiTrendingUp size={24} className="text-warning" />
+                  <FiTrendingUp size={24} style={{ color: '#E67E50' }} />
                 </div>
               </div>
             </Card.Body>
@@ -172,10 +172,10 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div
-                  className="rounded-circle bg-info bg-opacity-10 p-3"
-                  style={{ width: '60px', height: '60px' }}
+                  className="rounded-circle p-3"
+                  style={{ width: '60px', height: '60px', background: 'rgba(197,223,150,0.2)' }}
                 >
-                  <FiUsers size={24} className="text-info" />
+                  <FiUsers size={24} style={{ color: '#7a8567' }} />
                 </div>
               </div>
               {stats && stats.pending_reports && stats.pending_reports > 0 && (
@@ -292,7 +292,7 @@ export default function DashboardPage() {
                       <span>•</span>
                       <span>{thread.reply_count} replies</span>
                       <span>•</span>
-                      <span className="text-success">{thread.vote_score} votes</span>
+                      <span style={{ color: '#7a8567' }}>{thread.vote_score} votes</span>
                     </div>
                   </div>
                 </ListGroup.Item>
@@ -305,7 +305,7 @@ export default function DashboardPage() {
       {/* Quick Actions */}
       <Row className="mt-4">
         <Col md={12}>
-          <Card className="border-0 shadow-sm bg-primary bg-gradient text-white">
+          <Card className="border-0 shadow-sm text-white" style={{ background: 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)' }}>
             <Card.Body>
               <Row className="align-items-center">
                 <Col md={8}>
