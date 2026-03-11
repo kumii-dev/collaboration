@@ -74,9 +74,9 @@ export default function ForumPage() {
     const colors = [
       { bg: '#7a8567', IconComponent: FiMessageSquare },
       { bg: '#c5df96', IconComponent: FiDollarSign },
-      { bg: '#E67E50', IconComponent: BsLightbulb },
+      { bg: '#7a8567', IconComponent: BsLightbulb },
       { bg: '#7a8567', IconComponent: BsBarChartFill },
-      { bg: '#E67E50', IconComponent: BsBullseye },
+      { bg: '#c5df96', IconComponent: BsBullseye },
       { bg: '#c5df96', IconComponent: BsRocket }
     ];
     return colors[index % colors.length];
@@ -448,14 +448,15 @@ export default function ForumPage() {
 
                     {/* Apply Button */}
                     <Button 
-                      variant="warning" 
+                      variant="success" 
                       className="w-100 mt-3"
                       style={{
                         borderRadius: '8px',
                         padding: '10px',
                         fontWeight: '600',
-                        background: '#E67E50',
-                        borderColor: '#E67E50'
+                        background: 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)',
+                        borderColor: '#7a8567',
+                        color: 'white'
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -497,7 +498,7 @@ export default function ForumPage() {
           <Col md={4}>
             <Card className="text-center" style={{ border: '1px solid #E5E5E3', borderRadius: '12px' }}>
               <Card.Body className="py-4">
-                <h2 className="display-4 fw-bold mb-0" style={{ color: '#E67E50' }}>
+                <h2 className="display-4 fw-bold mb-0" style={{ color: '#7a8567' }}>
                   {displayThreads?.reduce((sum, t) => sum + t.reply_count, 0) || 0}
                 </h2>
                 <p className="text-muted mb-0">Total Replies</p>

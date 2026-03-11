@@ -71,7 +71,7 @@ export default function DashboardPage() {
       message: <FiMessageSquare style={{ color: '#7a8567' }} />,
       thread: <FiActivity style={{ color: '#7a8567' }} />,
       post: <FiActivity style={{ color: '#7a8567' }} />,
-      vote: <FiTrendingUp style={{ color: '#E67E50' }} />
+      vote: <FiTrendingUp style={{ color: '#7a8567' }} />
     };
     return icons[type] || <FiActivity />;
   };
@@ -150,9 +150,9 @@ export default function DashboardPage() {
                 </div>
                 <div
                   className="rounded-circle p-3"
-                  style={{ width: '60px', height: '60px', background: 'rgba(230,126,80,0.1)' }}
+                  style={{ width: '60px', height: '60px', background: 'rgba(122,133,103,0.1)' }}
                 >
-                  <FiTrendingUp size={24} style={{ color: '#E67E50' }} />
+                  <FiTrendingUp size={24} style={{ color: '#7a8567' }} />
                 </div>
               </div>
             </Card.Body>

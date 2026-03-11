@@ -208,7 +208,7 @@ export default function CategoryDetailPage() {
                       <strong>{board.name}</strong>
                       <div className="small text-muted">{board.description}</div>
                       {board.is_private && (
-                        <Badge style={{ background: '#E67E50' }} className="mt-1">
+                        <Badge style={{ background: '#7a8567' }} className="mt-1">
                           Private
                         </Badge>
                       )}

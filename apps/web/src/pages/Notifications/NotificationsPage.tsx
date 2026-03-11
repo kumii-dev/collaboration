@@ -76,7 +76,7 @@ export default function NotificationsPage() {
       mention: <FiMessageSquare style={{ color: '#7a8567' }} />,
       reply: <FiMessageSquare style={{ color: '#7a8567' }} />,
       vote: <FiThumbsUp style={{ color: '#c5df96' }} />,
-      message: <FiBell style={{ color: '#E67E50' }} />,
+      message: <FiBell style={{ color: '#7a8567' }} />,
       system: <FiAlertCircle className="text-danger" />
     };
     return icons[type] || <FiBell />;

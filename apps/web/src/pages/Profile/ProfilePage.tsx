@@ -133,7 +133,7 @@ export default function ProfilePage() {
       thread: <FiMail style={{ color: '#7a8567' }} />,
       post: <FiMail style={{ color: '#7a8567' }} />,
       message: <FiMail style={{ color: '#c5df96' }} />,
-      vote: <FiAward style={{ color: '#E67E50' }} />
+      vote: <FiAward style={{ color: '#7a8567' }} />
     };
     return icons[type] || <FiMail />;
   };
