@@ -5,6 +5,8 @@ import { FiMessageSquare, FiEye, FiUser, FiArrowRight } from 'react-icons/fi';
 import { format } from 'date-fns';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../lib/api';
+import { supabase } from '../../lib/supabase';
+import UpcomingEventsSection from '../../components/events/UpcomingEventsSection';
 
 interface Category {
   id: string;
@@ -47,6 +49,19 @@ export default function CategoryDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
+
+  // Fetch current user's role to decide whether to show Create Event button
+  const { data: currentUserProfile } = useQuery(
+    'current-user-profile',
+    async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const response = await api.get(`/users/${user.id}`);
+      return response.data.data as { role: string };
+    },
+    { staleTime: 300_000, retry: 1 }
+  );
+  const isAdmin = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'moderator';
 
   // Fetch all categories to find the one with matching slug
   const { data: categories, isLoading: loadingCategories, error: categoriesError } = useQuery(
@@ -173,6 +188,9 @@ export default function CategoryDetailPage() {
           </div>
         </Card.Body>
       </Card>
+
+      {/* ── Upcoming Events ── */}
+      <UpcomingEventsSection categoryId={category.id} isAdmin={isAdmin} />
 
       <Row>
         {/* Boards List */}

@@ -1,0 +1,310 @@
+import { useState, useEffect } from 'react';
+import { Modal, Button, Badge, Alert, Spinner } from 'react-bootstrap';
+import {
+  BsCalendarEvent, BsGeoAlt, BsCameraVideo,
+  BsPeopleFill, BsBell, BsPersonCircle, BsLink45Deg,
+} from 'react-icons/bs';
+import { FiExternalLink } from 'react-icons/fi';
+import { CommunityEvent, RsvpCounts, eventsApi } from '../../lib/eventsApi';
+
+interface Props {
+  event: CommunityEvent | null;
+  show: boolean;
+  onHide: () => void;
+  onRsvpChange: (eventId: string, status: string | null, counts: RsvpCounts) => void;
+}
+
+export default function EventDetailModal({ event, show, onHide, onRsvpChange }: Props) {
+  const [userRsvp,    setUserRsvp]    = useState<string | null>(null);
+  const [counts,      setCounts]      = useState<RsvpCounts>({ going: 0, interested: 0, not_going: 0 });
+  const [loading,     setLoading]     = useState(false);
+  const [reminderSet, setReminderSet] = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+
+  // Sync state whenever the event prop changes (e.g. after card RSVP)
+  useEffect(() => {
+    if (event) {
+      setUserRsvp(event.user_rsvp);
+      setCounts(event.rsvp_counts);
+      setReminderSet(false);
+      setError(null);
+    }
+  }, [event?.id, event?.user_rsvp, event?.rsvp_counts]);
+
+  if (!event) return null;
+
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+  const fmtTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const isFull = event.max_attendees != null && counts.going >= event.max_attendees;
+  const capacityPct = event.max_attendees
+    ? Math.min(100, Math.round((counts.going / event.max_attendees) * 100))
+    : 0;
+
+  const handleRsvp = async (status: 'going' | 'interested' | 'not_going') => {
+    setLoading(true);
+    setError(null);
+    try {
+      if (userRsvp === status) {
+        const res = await eventsApi.removeRsvp(event.id);
+        setCounts(res.rsvp_counts);
+        setUserRsvp(null);
+        onRsvpChange(event.id, null, res.rsvp_counts);
+      } else {
+        const res = await eventsApi.rsvp(event.id, status);
+        setCounts(res.rsvp_counts);
+        setUserRsvp(res.status);
+        onRsvpChange(event.id, res.status, res.rsvp_counts);
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetReminder = async () => {
+    setError(null);
+    try {
+      // 1 hour before the event
+      const remindAt = new Date(new Date(event.starts_at).getTime() - 60 * 60 * 1000).toISOString();
+      await eventsApi.setReminder(event.id, remindAt);
+      setReminderSet(true);
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? err.message);
+    }
+  };
+
+  const rsvpBtnStyle = (key: 'going' | 'interested' | 'not_going'): React.CSSProperties => {
+    const active = userRsvp === key;
+    if (key === 'going')
+      return { background: active ? 'linear-gradient(135deg,#7a8567,#c5df96)' : 'transparent', border: '1px solid #7a8567', color: active ? '#fff' : '#7a8567', fontWeight: 600, borderRadius: '8px' };
+    if (key === 'interested')
+      return { background: active ? '#c5df96' : 'transparent', border: '1px solid #c5df96', color: active ? '#fff' : '#7a8567', fontWeight: 600, borderRadius: '8px' };
+    return { borderRadius: '8px', fontSize: '0.85rem' };
+  };
+
+  return (
+    <Modal show={show} onHide={onHide} centered size="lg">
+      <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
+        {/* Gradient bar */}
+        <div style={{ height: '6px', background: 'linear-gradient(90deg,#7a8567,#c5df96)' }} />
+
+        <Modal.Header closeButton style={{ borderBottom: '1px solid #E5E5E3', padding: '1.25rem 1.5rem' }}>
+          <div>
+            <div className="d-flex gap-2 mb-1 flex-wrap">
+              {event.is_online && (
+                <Badge style={{ background: '#7a8567' }}>
+                  <BsCameraVideo className="me-1" />Online
+                </Badge>
+              )}
+              {event.forum_categories && (
+                <Badge style={{ background: '#c5df96', color: '#2D2D2D' }}>
+                  {event.forum_categories.name}
+                </Badge>
+              )}
+              {isFull          && <Badge bg="danger">Full</Badge>}
+              {event.is_cancelled && <Badge bg="secondary">Cancelled</Badge>}
+            </div>
+            <Modal.Title style={{ fontWeight: 700, color: '#2D2D2D', fontSize: '1.15rem' }}>
+              {event.title}
+            </Modal.Title>
+          </div>
+        </Modal.Header>
+
+        <Modal.Body style={{ padding: '1.5rem' }}>
+          {error && (
+            <Alert variant="danger" dismissible onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+          {reminderSet && (
+            <Alert variant="success" dismissible onClose={() => setReminderSet(false)}>
+              <BsBell className="me-2" />Reminder set for 1 hour before the event!
+            </Alert>
+          )}
+
+          <div className="row g-4">
+            {/* ── Left: details ── */}
+            <div className="col-md-7">
+              {event.description && (
+                <p style={{ color: '#5A5A5A', lineHeight: 1.75, marginBottom: '1.25rem' }}>
+                  {event.description}
+                </p>
+              )}
+
+              {/* Date */}
+              <div className="d-flex align-items-start gap-2 mb-3">
+                <BsCalendarEvent style={{ color: '#7a8567', marginTop: 3, flexShrink: 0 }} size={15} />
+                <div>
+                  <div style={{ fontWeight: 600, color: '#2D2D2D', fontSize: '0.9rem' }}>{fmtDate(event.starts_at)}</div>
+                  <div style={{ color: '#666', fontSize: '0.85rem' }}>
+                    {fmtTime(event.starts_at)}{event.ends_at ? ` – ${fmtTime(event.ends_at)}` : ''}
+                  </div>
+                </div>
+              </div>
+
+              {/* Location */}
+              {event.location && (
+                <div className="d-flex align-items-start gap-2 mb-3">
+                  <BsGeoAlt style={{ color: '#7a8567', marginTop: 3, flexShrink: 0 }} size={15} />
+                  <span style={{ color: '#5A5A5A', fontSize: '0.9rem' }}>{event.location}</span>
+                </div>
+              )}
+
+              {/* Meeting URL */}
+              {event.meeting_url && (
+                <div className="d-flex align-items-start gap-2 mb-3">
+                  <BsLink45Deg style={{ color: '#7a8567', marginTop: 3, flexShrink: 0 }} size={15} />
+                  <a href={event.meeting_url} target="_blank" rel="noopener noreferrer"
+                    style={{ color: '#7a8567', fontSize: '0.9rem' }}>
+                    Join Meeting <FiExternalLink size={11} />
+                  </a>
+                </div>
+              )}
+
+              {/* Host */}
+              {event.profiles && (
+                <div className="d-flex align-items-center gap-2 mb-3">
+                  <BsPersonCircle style={{ color: '#7a8567' }} size={15} />
+                  <span style={{ color: '#5A5A5A', fontSize: '0.88rem' }}>
+                    Hosted by <strong>{event.profiles.full_name ?? event.profiles.username}</strong>
+                  </span>
+                </div>
+              )}
+
+              {/* Attendees */}
+              {event.attendees && event.attendees.length > 0 && (
+                <div>
+                  <p style={{ fontSize: '0.82rem', color: '#888', marginBottom: '0.4rem' }}>
+                    <BsPeopleFill className="me-1" style={{ color: '#7a8567' }} />
+                    {counts.going} people going
+                  </p>
+                  <div className="d-flex flex-wrap gap-1">
+                    {event.attendees.slice(0, 8).map(a => (
+                      <div
+                        key={a.id}
+                        title={a.username}
+                        style={{
+                          width: 30, height: 30, borderRadius: '50%',
+                          background: 'linear-gradient(135deg,#7a8567,#c5df96)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: '#fff', fontSize: '0.7rem', fontWeight: 700,
+                        }}
+                      >
+                        {a.username?.charAt(0).toUpperCase()}
+                      </div>
+                    ))}
+                    {counts.going > 8 && (
+                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#E5E5E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', color: '#666' }}>
+                        +{counts.going - 8}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Right: RSVP panel ── */}
+            <div className="col-md-5">
+              <div style={{ background: '#F5F5F3', borderRadius: '12px', padding: '1.25rem' }}>
+                <h6 style={{ fontWeight: 700, color: '#2D2D2D', marginBottom: '0.85rem' }}>
+                  <BsPeopleFill className="me-2" style={{ color: '#7a8567' }} />
+                  Attendance
+                </h6>
+
+                {/* Count rows */}
+                <div className="mb-3">
+                  {[
+                    { key: 'going',      label: '✓ Going',     val: counts.going      },
+                    { key: 'interested', label: '★ Interested', val: counts.interested },
+                  ].map(({ key, label, val }) => (
+                    <div key={key} className="d-flex justify-content-between mb-1" style={{ fontSize: '0.85rem' }}>
+                      <span style={{ color: key === 'going' ? '#7a8567' : '#666', fontWeight: key === 'going' ? 600 : 400 }}>
+                        {label}
+                      </span>
+                      <strong>{val}</strong>
+                    </div>
+                  ))}
+                  {event.max_attendees && (
+                    <div className="d-flex justify-content-between" style={{ fontSize: '0.8rem', color: isFull ? '#dc3545' : '#7a8567' }}>
+                      <span>Capacity</span>
+                      <span>{counts.going} / {event.max_attendees}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Capacity bar */}
+                {event.max_attendees && (
+                  <div style={{ background: '#E5E5E3', borderRadius: 4, height: 6, marginBottom: '1rem' }}>
+                    <div style={{
+                      background: isFull ? '#dc3545' : 'linear-gradient(90deg,#7a8567,#c5df96)',
+                      width: `${capacityPct}%`,
+                      height: '100%',
+                      borderRadius: 4,
+                      transition: 'width .4s ease',
+                    }} />
+                  </div>
+                )}
+
+                {/* RSVP buttons */}
+                {!event.is_cancelled && (
+                  <div className="d-flex flex-column gap-2">
+                    <Button
+                      className="w-100"
+                      style={rsvpBtnStyle('going')}
+                      disabled={loading || (isFull && userRsvp !== 'going')}
+                      onClick={() => handleRsvp('going')}
+                    >
+                      {loading
+                        ? <Spinner size="sm" animation="border" />
+                        : userRsvp === 'going' ? "✓ You're Going!" : "✓ I'm Going"}
+                    </Button>
+                    <Button
+                      className="w-100"
+                      style={rsvpBtnStyle('interested')}
+                      disabled={loading}
+                      onClick={() => handleRsvp('interested')}
+                    >
+                      {userRsvp === 'interested' ? '★ Marked as Interested' : '★ Interested'}
+                    </Button>
+                    <Button
+                      className="w-100"
+                      variant="outline-secondary"
+                      style={rsvpBtnStyle('not_going')}
+                      disabled={loading}
+                      onClick={() => handleRsvp('not_going')}
+                    >
+                      {userRsvp === 'not_going' ? "✕ Not Going" : "Can't Make It"}
+                    </Button>
+                  </div>
+                )}
+
+                {/* Reminder button — shown only when user is going */}
+                {userRsvp === 'going' && !reminderSet && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="w-100 mt-2"
+                    style={{ color: '#7a8567', fontSize: '0.82rem', textDecoration: 'none' }}
+                    onClick={handleSetReminder}
+                  >
+                    <BsBell className="me-1" />Set reminder (1 hr before)
+                  </Button>
+                )}
+                {reminderSet && (
+                  <div className="text-center mt-2" style={{ fontSize: '0.82rem', color: '#7a8567' }}>
+                    <BsBell className="me-1" />Reminder saved!
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal.Body>
+      </div>
+    </Modal>
+  );
+}

@@ -12,6 +12,7 @@ import forumRoutes from './routes/forum.js';
 import moderationRoutes from './routes/moderation.js';
 import notificationsRoutes from './routes/notifications.js';
 import usersRoutes from './routes/users.js';
+import eventsRoutes from './routes/events.js';
 
 const app = express();
 
@@ -100,6 +101,7 @@ app.use('/api/forum', forumRoutes);
 app.use('/api/moderation', moderationRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/events', eventsRoutes);
 
 // =====================================================
 // ERROR HANDLING
