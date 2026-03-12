@@ -59,7 +59,7 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
       .select(`
         *,
         forum_categories!category_id (id, name, slug),
-        profiles!created_by (id, username, avatar_url, full_name),
+        profiles!community_events_created_by_fkey_profiles (id, email, avatar_url, full_name),
         community_event_rsvps (id, status, user_id)
       `)
       .eq('is_cancelled', false)
@@ -107,8 +107,8 @@ router.get('/:id', authenticate, validateParams(idSchema), async (req: AuthReque
       .select(`
         *,
         forum_categories!category_id (id, name, slug),
-        profiles!created_by (id, username, avatar_url, full_name),
-        community_event_rsvps (id, status, user_id, profiles!user_id (id, username, avatar_url))
+        profiles!community_events_created_by_fkey_profiles (id, email, avatar_url, full_name),
+        community_event_rsvps (id, status, user_id, profiles!community_event_rsvps_user_id_fkey_profiles (id, email, avatar_url, full_name))
       `)
       .eq('id', id)
       .single();
@@ -147,7 +147,7 @@ router.post('/', authenticate, validateBody(createEventSchema), async (req: Auth
     const { data, error } = await supabaseAdmin
       .from('community_events')
       .insert(payload)
-      .select(`*, profiles!created_by (id, username, avatar_url, full_name)`)
+      .select(`*, profiles!community_events_created_by_fkey_profiles (id, email, avatar_url, full_name)`)
       .single();
 
     if (error) throw error;

@@ -22,10 +22,10 @@ export interface CommunityEvent {
   created_by: string;
   created_at: string;
   forum_categories?: { id: string; name: string; slug: string };
-  profiles?: { id: string; username: string; avatar_url?: string; full_name?: string };
+  profiles?: { id: string; email: string; avatar_url?: string; full_name?: string };
   rsvp_counts: RsvpCounts;
   user_rsvp: 'going' | 'interested' | 'not_going' | null;
-  attendees?: Array<{ id: string; username: string; avatar_url?: string }>;
+  attendees?: Array<{ id: string; email: string; avatar_url?: string; full_name?: string }>;
 }
 
 export interface CreateEventPayload {

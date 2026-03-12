@@ -171,7 +171,7 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange }: 
                 <div className="d-flex align-items-center gap-2 mb-3">
                   <BsPersonCircle style={{ color: '#7a8567' }} size={15} />
                   <span style={{ color: '#5A5A5A', fontSize: '0.88rem' }}>
-                    Hosted by <strong>{event.profiles.full_name ?? event.profiles.username}</strong>
+                    Hosted by <strong>{event.profiles.full_name ?? event.profiles.email}</strong>
                   </span>
                 </div>
               )}
@@ -187,7 +187,7 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange }: 
                     {event.attendees.slice(0, 8).map(a => (
                       <div
                         key={a.id}
-                        title={a.username}
+                        title={a.full_name ?? a.email}
                         style={{
                           width: 30, height: 30, borderRadius: '50%',
                           background: 'linear-gradient(135deg,#7a8567,#c5df96)',
@@ -195,7 +195,7 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange }: 
                           color: '#fff', fontSize: '0.7rem', fontWeight: 700,
                         }}
                       >
-                        {a.username?.charAt(0).toUpperCase()}
+                        {(a.full_name ?? a.email)?.charAt(0).toUpperCase()}
                       </div>
                     ))}
                     {counts.going > 8 && (
