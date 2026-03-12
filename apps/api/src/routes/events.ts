@@ -58,7 +58,7 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
       .from('community_events')
       .select(`
         *,
-        forum_categories!category_id (id, name, slug),
+        forum_categories!category_id (id, name),
         profiles!community_events_created_by_fkey_profiles (id, email, avatar_url, full_name),
         community_event_rsvps (id, status, user_id)
       `)
@@ -75,8 +75,13 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
     const userId = req.user!.id;
     const events = (data ?? []).map((e: any) => {
       const rsvps = e.community_event_rsvps ?? [];
+      const cat   = e.forum_categories;
       return {
         ...e,
+        forum_categories: cat ? {
+          ...cat,
+          slug: cat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        } : null,
         rsvp_counts: {
           going:      rsvps.filter((r: any) => r.status === 'going').length,
           interested: rsvps.filter((r: any) => r.status === 'interested').length,
@@ -106,7 +111,7 @@ router.get('/:id', authenticate, validateParams(idSchema), async (req: AuthReque
       .from('community_events')
       .select(`
         *,
-        forum_categories!category_id (id, name, slug),
+        forum_categories!category_id (id, name),
         profiles!community_events_created_by_fkey_profiles (id, email, avatar_url, full_name),
         community_event_rsvps (id, status, user_id, profiles!community_event_rsvps_user_id_fkey_profiles (id, email, avatar_url, full_name))
       `)
@@ -117,8 +122,13 @@ router.get('/:id', authenticate, validateParams(idSchema), async (req: AuthReque
     if (!data) return res.status(404).json({ success: false, error: 'Event not found' });
 
     const rsvps = (data as any).community_event_rsvps ?? [];
+    const cat   = (data as any).forum_categories;
     const event = {
       ...data,
+      forum_categories: cat ? {
+        ...cat,
+        slug: cat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      } : null,
       rsvp_counts: {
         going:      rsvps.filter((r: any) => r.status === 'going').length,
         interested: rsvps.filter((r: any) => r.status === 'interested').length,
