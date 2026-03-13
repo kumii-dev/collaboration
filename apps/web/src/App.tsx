@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { supabase } from './lib/supabase';
@@ -57,6 +57,10 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [iframeTimeout, setIframeTimeout] = useState(false);
+
+  // Refs to the active ping interval + fallback timer so "Try again" can restart them
+  const activeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Pre-seed from localStorage so profile is available immediately on
   // subsequent navigations within the same iframe session.
@@ -141,6 +145,10 @@ function App() {
         clearInterval(interval);
       }, 20000);
 
+      // Expose interval + fallback ids so the "Try again" button can restart them
+      activeIntervalRef.current = interval;
+      activeFallbackRef.current = fallbackTimer;
+
       return () => {
         subscription.unsubscribe();
         window.removeEventListener('message', handleMessage);
@@ -187,12 +195,32 @@ function App() {
             </p>
             <button
               onClick={() => {
-                // Re-ping parent and restart the wait window
+                // Clear any stale timers
+                if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+                if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
+
+                // Reset UI back to spinner
                 setIframeTimeout(false);
                 setLoading(true);
-                window.parent.postMessage({ type: 'KUMII_READY' }, '*');
-                // Give another 20 s
-                setTimeout(() => { setIframeTimeout(true); setLoading(false); }, 20000);
+
+                // Restart full ping cadence — 800 ms × 25 = 20 s
+                const ping = () => window.parent.postMessage({ type: 'KUMII_READY' }, '*');
+                ping(); // immediate
+                let retries = 0;
+                const interval = setInterval(() => {
+                  retries++;
+                  ping();
+                  if (retries >= 25) clearInterval(interval);
+                }, 800);
+                activeIntervalRef.current = interval;
+
+                // New 20 s fallback
+                const fallback = setTimeout(() => {
+                  setIframeTimeout(true);
+                  setLoading(false);
+                  clearInterval(interval);
+                }, 20000);
+                activeFallbackRef.current = fallback;
               }}
               style={{
                 background: 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)',

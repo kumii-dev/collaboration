@@ -7,6 +7,25 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
+// ── One-time migration: copy any session stored under the old default key ──
+// Users who visited before the storageKey change have a valid token stored
+// under 'sb-<ref>-auth-token'. Move it to 'kumii-collab-auth' so they don't
+// hit the 20 s timeout on their next visit.
+try {
+  const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\./)?.[1] ?? '';
+  const oldKey = `sb-${projectRef}-auth-token`;
+  const newKey = 'kumii-collab-auth';
+  if (projectRef && !localStorage.getItem(newKey)) {
+    const legacy = localStorage.getItem(oldKey);
+    if (legacy) {
+      localStorage.setItem(newKey, legacy);
+      localStorage.removeItem(oldKey);
+    }
+  }
+} catch {
+  // localStorage may be unavailable (private browsing, cross-origin) — safe to ignore
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
