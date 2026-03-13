@@ -2,11 +2,14 @@ import { useState } from 'react';
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, Button, Spinner, ListGroup } from 'react-bootstrap';
 import { FiMessageSquare, FiEye, FiUser, FiArrowRight } from 'react-icons/fi';
+import { BsChatDots } from 'react-icons/bs';
+import { FiCalendar } from 'react-icons/fi';
 import { format } from 'date-fns';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import UpcomingEventsSection from '../../components/events/UpcomingEventsSection';
+import CommunityChatPanel from '../../components/community/CommunityChatPanel';
 
 interface Category {
   id: string;
@@ -49,6 +52,7 @@ export default function CategoryDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'discussions' | 'chat' | 'events'>('discussions');
 
   // Fetch current user's role to decide whether to show Create Event button
   const { data: currentUserProfile } = useQuery(
@@ -189,136 +193,188 @@ export default function CategoryDetailPage() {
         </Card.Body>
       </Card>
 
-      {/* ── Upcoming Events ── */}
-      <UpcomingEventsSection categoryId={category.id} isAdmin={isAdmin} />
+      {/* ── Tab Bar ── */}
+      <div
+        className="d-flex gap-1 mb-4"
+        style={{
+          background: 'white',
+          border: '1px solid #E5E5E3',
+          borderRadius: '12px',
+          padding: '6px',
+          width: 'fit-content',
+        }}
+      >
+        {([
+          { key: 'discussions', label: 'Discussions', Icon: FiMessageSquare },
+          { key: 'chat',        label: 'Chat',        Icon: BsChatDots },
+          { key: 'events',      label: 'Events',      Icon: FiCalendar },
+        ] as const).map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: activeTab === key ? '600' : '400',
+              background: activeTab === key
+                ? 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)'
+                : 'transparent',
+              color: activeTab === key ? 'white' : '#666',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Icon size={15} />
+            {label}
+          </button>
+        ))}
+      </div>
 
-      <Row>
-        {/* Boards List */}
-        <Col lg={4}>
-          <Card className="mb-4 shadow-sm">
-            <Card.Header>
-              <h5 className="mb-0">Boards</h5>
-            </Card.Header>
-            <ListGroup variant="flush">
-              <ListGroup.Item
-                active={selectedBoard === null}
-                action
-                onClick={() => setSelectedBoard(null)}
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="d-flex justify-content-between align-items-center">
-                  <div>
-                    <strong>All Boards</strong>
-                    <div className="small text-muted">Show all threads</div>
-                  </div>
-                </div>
-              </ListGroup.Item>
-              {boards?.map((board) => (
+      {/* ── Tab: Discussions ── */}
+      {activeTab === 'discussions' && (
+        <Row>
+          {/* Boards List */}
+          <Col lg={4}>
+            <Card className="mb-4 shadow-sm">
+              <Card.Header>
+                <h5 className="mb-0">Boards</h5>
+              </Card.Header>
+              <ListGroup variant="flush">
                 <ListGroup.Item
-                  key={board.id}
-                  active={selectedBoard === board.id}
+                  active={selectedBoard === null}
                   action
-                  onClick={() => setSelectedBoard(board.id)}
+                  onClick={() => setSelectedBoard(null)}
                   style={{ cursor: 'pointer' }}
                 >
                   <div className="d-flex justify-content-between align-items-center">
                     <div>
-                      <strong>{board.name}</strong>
-                      <div className="small text-muted">{board.description}</div>
-                      {board.is_private && (
-                        <Badge style={{ background: '#7a8567' }} className="mt-1">
-                          Private
-                        </Badge>
-                      )}
+                      <strong>All Boards</strong>
+                      <div className="small text-muted">Show all threads</div>
                     </div>
-                    <FiArrowRight />
                   </div>
                 </ListGroup.Item>
-              ))}
-            </ListGroup>
-          </Card>
-        </Col>
-
-        {/* Recent Threads */}
-        <Col lg={8}>
-          <Card className="shadow-sm">
-            <Card.Header className="d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">
-                {selectedBoard 
-                  ? `Threads in ${boards?.find(b => b.id === selectedBoard)?.name}`
-                  : 'Recent Threads'
-                }
-              </h5>
-            </Card.Header>
-            <ListGroup variant="flush">
-              {loadingThreads ? (
-                <ListGroup.Item className="text-center py-4">
-                  <Spinner animation="border" size="sm" style={{ color: '#7a8567' }} />
-                </ListGroup.Item>
-              ) : threadsError ? (
-                <ListGroup.Item className="text-center py-4">
-                  <p className="text-danger mb-2">Failed to load threads</p>
-                  <Button
-                    style={{ background: 'transparent', borderColor: '#7a8567', color: '#7a8567' }}
-                    size="sm"
-                    onClick={() => window.location.reload()}
-                  >
-                    Retry
-                  </Button>
-                </ListGroup.Item>
-              ) : threads && threads.length > 0 ? (
-                threads.map((thread) => (
+                {boards?.map((board) => (
                   <ListGroup.Item
-                    key={thread.id}
+                    key={board.id}
+                    active={selectedBoard === board.id}
                     action
-                    onClick={() => navigate(`/forum/threads/${thread.id}`)}
+                    onClick={() => setSelectedBoard(board.id)}
                     style={{ cursor: 'pointer' }}
                   >
-                    <div className="d-flex justify-content-between align-items-start">
-                      <div className="flex-grow-1">
-                        <h6 className="mb-1">{thread.title}</h6>
-                        <p className="text-muted small mb-2">{thread.content_preview}...</p>
-                        <div className="d-flex gap-3 text-muted small">
-                          <span>
-                            <FiUser className="me-1" />
-                            {thread.author_name}
-                          </span>
-                          <span>
-                            <FiMessageSquare className="me-1" />
-                            {thread.reply_count} replies
-                          </span>
-                          <span>
-                            <FiEye className="me-1" />
-                            {thread.view_count} views
-                          </span>
-                          <span>
-                            {format(new Date(thread.created_at), 'MMM d, yyyy')}
-                          </span>
-                        </div>
+                    <div className="d-flex justify-content-between align-items-center">
+                      <div>
+                        <strong>{board.name}</strong>
+                        <div className="small text-muted">{board.description}</div>
+                        {board.is_private && (
+                          <Badge style={{ background: '#7a8567' }} className="mt-1">
+                            Private
+                          </Badge>
+                        )}
                       </div>
-                      {thread.vote_score > 0 && (
-                        <Badge style={{ background: '#7a8567' }} className="ms-2">
-                          +{thread.vote_score}
-                        </Badge>
-                      )}
+                      <FiArrowRight />
                     </div>
                   </ListGroup.Item>
-                ))
-              ) : (
-                <ListGroup.Item className="text-center py-4">
-                  <p className="text-muted mb-0">No threads yet.</p>
-                  <Button
-                    variant="link"
-                    onClick={() => navigate('/forum/new-thread')}
-                  >
-                    Be the first to start a discussion!
-                  </Button>
-                </ListGroup.Item>
-              )}
-            </ListGroup>
-          </Card>
-        </Col>
-      </Row>
+                ))}
+              </ListGroup>
+            </Card>
+          </Col>
+
+          {/* Recent Threads */}
+          <Col lg={8}>
+            <Card className="shadow-sm">
+              <Card.Header className="d-flex justify-content-between align-items-center">
+                <h5 className="mb-0">
+                  {selectedBoard 
+                    ? `Threads in ${boards?.find(b => b.id === selectedBoard)?.name}`
+                    : 'Recent Threads'
+                  }
+                </h5>
+              </Card.Header>
+              <ListGroup variant="flush">
+                {loadingThreads ? (
+                  <ListGroup.Item className="text-center py-4">
+                    <Spinner animation="border" size="sm" style={{ color: '#7a8567' }} />
+                  </ListGroup.Item>
+                ) : threadsError ? (
+                  <ListGroup.Item className="text-center py-4">
+                    <p className="text-danger mb-2">Failed to load threads</p>
+                    <Button
+                      style={{ background: 'transparent', borderColor: '#7a8567', color: '#7a8567' }}
+                      size="sm"
+                      onClick={() => window.location.reload()}
+                    >
+                      Retry
+                    </Button>
+                  </ListGroup.Item>
+                ) : threads && threads.length > 0 ? (
+                  threads.map((thread) => (
+                    <ListGroup.Item
+                      key={thread.id}
+                      action
+                      onClick={() => navigate(`/forum/threads/${thread.id}`)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <div className="d-flex justify-content-between align-items-start">
+                        <div className="flex-grow-1">
+                          <h6 className="mb-1">{thread.title}</h6>
+                          <p className="text-muted small mb-2">{thread.content_preview}...</p>
+                          <div className="d-flex gap-3 text-muted small">
+                            <span>
+                              <FiUser className="me-1" />
+                              {thread.author_name}
+                            </span>
+                            <span>
+                              <FiMessageSquare className="me-1" />
+                              {thread.reply_count} replies
+                            </span>
+                            <span>
+                              <FiEye className="me-1" />
+                              {thread.view_count} views
+                            </span>
+                            <span>
+                              {format(new Date(thread.created_at), 'MMM d, yyyy')}
+                            </span>
+                          </div>
+                        </div>
+                        {thread.vote_score > 0 && (
+                          <Badge style={{ background: '#7a8567' }} className="ms-2">
+                            +{thread.vote_score}
+                          </Badge>
+                        )}
+                      </div>
+                    </ListGroup.Item>
+                  ))
+                ) : (
+                  <ListGroup.Item className="text-center py-4">
+                    <p className="text-muted mb-0">No threads yet.</p>
+                    <Button
+                      variant="link"
+                      onClick={() => navigate('/forum/new-thread')}
+                    >
+                      Be the first to start a discussion!
+                    </Button>
+                  </ListGroup.Item>
+                )}
+              </ListGroup>
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {/* ── Tab: Chat ── */}
+      {activeTab === 'chat' && (
+        <CommunityChatPanel categoryId={category.id} categoryName={category.name} />
+      )}
+
+      {/* ── Tab: Events ── */}
+      {activeTab === 'events' && (
+        <UpcomingEventsSection categoryId={category.id} isAdmin={isAdmin} />
+      )}
     </div>
   );
 }

@@ -105,6 +105,61 @@ router.get(
 );
 
 /**
+ * GET /api/chat/conversations/community/:categoryId
+ * Find or create the shared group conversation for a forum community.
+ * Any authenticated user can join by calling this endpoint.
+ */
+router.get(
+  '/conversations/community/:categoryId',
+  authenticate,
+  validateParams(z.object({ categoryId: z.string().uuid() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { categoryId } = req.params;
+      const userId = req.user!.id;
+      const communityName = `community:${categoryId}`;
+
+      // Look for existing community conversation by name
+      const { data: existing } = await supabaseAdmin
+        .from('conversations')
+        .select('id, name, type, created_at, last_message_at')
+        .eq('name', communityName)
+        .eq('type', 'group')
+        .maybeSingle();
+
+      let conversationId: string;
+
+      if (existing) {
+        conversationId = existing.id;
+      } else {
+        // Create a new group conversation for this community
+        const { data: created, error: createError } = await supabaseAdmin
+          .from('conversations')
+          .insert({ type: 'group', name: communityName, created_by: userId })
+          .select()
+          .single();
+
+        if (createError || !created) {
+          logger.error('Failed to create community conversation', { createError });
+          return res.status(500).json({ success: false, error: 'Failed to create community chat' });
+        }
+        conversationId = created.id;
+      }
+
+      // Ensure the requesting user is a participant (upsert — safe if already in)
+      await supabaseAdmin
+        .from('conversation_participants')
+        .upsert({ conversation_id: conversationId, user_id: userId }, { onConflict: 'conversation_id,user_id' });
+
+      res.json({ success: true, data: { conversationId } });
+    } catch (error) {
+      logger.error('Community chat error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
  * POST /api/chat/conversations
  * Create a new conversation
  */
