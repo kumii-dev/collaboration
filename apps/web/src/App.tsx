@@ -103,6 +103,9 @@ function App() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // In iframe mode: ignore session-null events (token refresh gap) —
+      // the parent will re-send KUMII_SESSION via onAuthStateChange on its side.
+      if (inIframe && !session) return;
       setSession(session);
     });
 
@@ -117,7 +120,7 @@ function App() {
         ping();
       }, 800);
 
-      // After 15 s with no response, fall through to the login form
+      // After 15 s with no response, clear loading — will re-ping below
       const fallbackTimer = setTimeout(() => {
         setIframeTimeout(true);
         setLoading(false);
@@ -147,16 +150,19 @@ function App() {
     );
   }
 
-  // Timeout fallback — parent never sent KUMII_SESSION; show login form
-  if (iframeTimeout && !session) {
+  // In iframe: if no session yet, never show the login page — show a reconnect
+  // prompt instead. The parent will re-send KUMII_SESSION on its next render.
+  if (inIframe && !session) {
     return (
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <Routes>
-            <Route path="*" element={<LoginPage />} />
-          </Routes>
-        </BrowserRouter>
-      </QueryClientProvider>
+      <div className="d-flex flex-column justify-content-center align-items-center vh-100 text-center px-4" style={{ background: '#F5F5F3' }}>
+        <div className="spinner-border mb-3" style={{ color: '#7a8567' }} role="status">
+          <span className="visually-hidden">Reconnecting…</span>
+        </div>
+        <p style={{ color: '#7a8567', fontWeight: 600, marginBottom: 4 }}>Connecting to your session…</p>
+        <p style={{ color: '#aaa', fontSize: 13 }}>
+          {iframeTimeout ? 'Please refresh the page if this takes too long.' : 'Waiting for Kumii to pass your session.'}
+        </p>
+      </div>
     );
   }
 
@@ -167,7 +173,11 @@ function App() {
           <Routes>
             <Route
               path="/login"
-              element={!session ? <LoginPage /> : <Navigate to="/dashboard" />}
+              element={
+                !session
+                  ? (inIframe ? <Navigate to="/dashboard" /> : <LoginPage />)
+                  : <Navigate to="/dashboard" />
+              }
             />
             <Route
               path="/"
