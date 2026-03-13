@@ -25,7 +25,8 @@ Paste the following into Lovable:
 > export default function CommunityPage() {
 >   const iframeRef = useRef<HTMLIFrameElement>(null);
 >   const [ready, setReady] = useState(false);
->   // Use a timestamp ref so we re-send if the iframe re-pings after >5 s
+>   // Timestamp of the last KUMII_SESSION send — prevents duplicate sends within 500 ms
+>   // but never blocks a legitimate retry (e.g. user clicks "Try again" after a failed auth)
 >   const lastSentAtRef = useRef<number>(0);
 >
 >   const sendSession = async () => {
@@ -47,9 +48,9 @@ Paste the following into Lovable:
 >       if (event.origin !== COLLAB_URL) return;
 >       if (event.data?.type !== 'KUMII_READY') return;
 >
->       // Re-send if: never sent, OR last send was >5 s ago (retry scenario)
+>       // Debounce: ignore duplicate pings within 500 ms, but always allow retries
 >       const timeSinceLast = Date.now() - lastSentAtRef.current;
->       if (timeSinceLast < 5000) return;
+>       if (timeSinceLast < 500) return;
 >
 >       await sendSession();
 >     };
