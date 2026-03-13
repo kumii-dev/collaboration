@@ -22,19 +22,46 @@ const app = express();
 
 // Security headers
 app.use(helmet({
+  // Allow embedding in Lovable / kumii.africa iframes
+  frameguard: false,
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
+      frameAncestors: [
+        "'self'",
+        "https://kumii.africa",
+        "https://*.lovable.app",
+        "https://*.lovableproject.com",
+        "https://*.gptengineer.app",
+      ],
     },
   },
 }));
 
 // CORS
+const ALLOWED_ORIGINS = [
+  config.CORS_ORIGIN,
+  'https://kumii.africa',
+  'https://www.kumii.africa',
+].filter(Boolean);
+
+const ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/[a-z0-9-]+\.lovable\.app$/,
+  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
+  /^https:\/\/[a-z0-9-]+\.gptengineer\.app$/,
+];
+
 app.use(cors({
-  origin: config.CORS_ORIGIN,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, curl, etc.)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    if (ALLOWED_ORIGIN_PATTERNS.some(p => p.test(origin))) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
 }));
 

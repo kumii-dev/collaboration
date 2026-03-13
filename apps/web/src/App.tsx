@@ -36,36 +36,78 @@ function App() {
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('🔵 Initial session:', session ? 'Authenticated' : 'Not authenticated');
-      console.log('🔵 Session data:', session);
       setSession(session);
       setLoading(false);
     });
 
-    // Listen for auth changes
+    // Listen for auth state changes (normal login / logout)
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('🔵 Auth state change:', event, session ? 'Authenticated' : 'Not authenticated');
-      console.log('🔵 Session data:', session);
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    // ── iframe / Lovable postMessage auth ────────────────────────────────────
+    // When this app runs inside a Lovable iframe the parent posts:
+    //   { type: 'KUMII_SESSION', access_token: '...', refresh_token: '...' }
+    // We call setSession() so the user is instantly logged in without a
+    // separate login page.
+    const handleMessage = async (event: MessageEvent) => {
+      // Only accept messages from trusted origins
+      const trusted = [
+        'https://kumii.africa',
+        'https://www.kumii.africa',
+      ];
+      const trustedPatterns = [
+        /^https:\/\/[a-z0-9-]+\.lovable\.app$/,
+        /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
+        /^https:\/\/[a-z0-9-]+\.gptengineer\.app$/,
+      ];
+      const origin = event.origin;
+      const isTrusted =
+        trusted.includes(origin) ||
+        trustedPatterns.some(p => p.test(origin));
+
+      if (!isTrusted) return;
+
+      const { type, access_token, refresh_token } = event.data ?? {};
+      if (type !== 'KUMII_SESSION' || !access_token || !refresh_token) return;
+
+      const { data, error } = await supabase.auth.setSession({
+        access_token,
+        refresh_token,
+      });
+      if (error) {
+        console.error('❌ iframe session injection failed:', error.message);
+      } else {
+        console.log('✅ Session received from parent frame');
+        setSession(data.session);
+        setLoading(false);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    // Tell the parent frame we're ready to receive the session
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'KUMII_READY' }, '*');
+    }
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   if (loading) {
-    console.log('🔵 App loading...');
     return (
       <div className="d-flex justify-content-center align-items-center vh-100">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
+        <div className="spinner-border" style={{ color: '#7a8567' }} role="status">
+          <span className="visually-hidden">Loading…</span>
         </div>
       </div>
     );
   }
-
-  console.log('🔵 App render - session:', session ? 'Authenticated' : 'Not authenticated');
 
   return (
     <QueryClientProvider client={queryClient}>
