@@ -29,45 +29,35 @@ const queryClient = new QueryClient({
   },
 });
 
+// Detect iframe context once at module level — stable, no re-renders
+const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
+
 function App() {
   const [session, setSession] = useState<Session | null>(null);
+  // In iframe mode keep loading=true until we receive a session via postMessage.
+  // In standalone mode, resolve immediately after getSession().
   const [loading, setLoading] = useState(true);
+  const [iframeTimeout, setIframeTimeout] = useState(false);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    // Listen for auth state changes (normal login / logout)
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
     // ── iframe / Lovable postMessage auth ────────────────────────────────────
-    // When this app runs inside a Lovable iframe the parent posts:
-    //   { type: 'KUMII_SESSION', access_token: '...', refresh_token: '...' }
-    // We call setSession() so the user is instantly logged in without a
-    // separate login page.
+    // Register the message listener FIRST — before getSession() — so we never
+    // miss a KUMII_SESSION that arrives early.
+    const trusted = [
+      'https://kumii.africa',
+      'https://www.kumii.africa',
+    ];
+    const trustedPatterns = [
+      /^https:\/\/[a-z0-9-]+\.lovable\.app$/,
+      /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
+      /^https:\/\/[a-z0-9-]+\.gptengineer\.app$/,
+    ];
+
     const handleMessage = async (event: MessageEvent) => {
-      // Only accept messages from trusted origins
-      const trusted = [
-        'https://kumii.africa',
-        'https://www.kumii.africa',
-      ];
-      const trustedPatterns = [
-        /^https:\/\/[a-z0-9-]+\.lovable\.app$/,
-        /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
-        /^https:\/\/[a-z0-9-]+\.gptengineer\.app$/,
-      ];
       const origin = event.origin;
       const isTrusted =
         trusted.includes(origin) ||
         trustedPatterns.some(p => p.test(origin));
-
       if (!isTrusted) return;
 
       const { type, access_token, refresh_token } = event.data ?? {};
@@ -80,7 +70,6 @@ function App() {
       if (error) {
         console.error('❌ iframe session injection failed:', error.message);
       } else {
-        console.log('✅ Session received from parent frame');
         setSession(data.session);
         setLoading(false);
       }
@@ -88,9 +77,49 @@ function App() {
 
     window.addEventListener('message', handleMessage);
 
-    // Tell the parent frame we're ready to receive the session
-    if (window.parent !== window) {
-      window.parent.postMessage({ type: 'KUMII_READY' }, '*');
+    // Get initial session (handles direct visits / standalone mode)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      // In iframe mode: only mark done if we already have a session.
+      // Otherwise stay on the loading screen and wait for postMessage.
+      if (!inIframe || session) {
+        setLoading(false);
+      }
+    });
+
+    // Listen for normal auth state changes (login / logout)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    // ── KUMII_READY — tell the parent we're ready for the session handoff ────
+    // Send immediately, then retry every 800 ms for up to 10 s in case the
+    // parent wasn't listening yet when we first loaded (race condition fix).
+    if (inIframe) {
+      const ping = () => window.parent.postMessage({ type: 'KUMII_READY' }, '*');
+      ping(); // immediate
+
+      let retries = 0;
+      const interval = setInterval(() => {
+        retries++;
+        ping();
+        if (retries >= 12) clearInterval(interval); // stop after ~10 s
+      }, 800);
+
+      // Show a helpful error if the parent never responds after 15 s
+      const fallbackTimer = setTimeout(() => {
+        setIframeTimeout(true);
+        setLoading(false);
+      }, 15000);
+
+      return () => {
+        subscription.unsubscribe();
+        window.removeEventListener('message', handleMessage);
+        clearInterval(interval);
+        clearTimeout(fallbackTimer);
+      };
     }
 
     return () => {
@@ -99,15 +128,27 @@ function App() {
     };
   }, []);
 
-  // Detect iframe context once (stable across renders)
-  const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
-
   if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center vh-100" style={{ background: '#F5F5F3' }}>
         <div className="spinner-border" style={{ color: '#7a8567' }} role="status">
           <span className="visually-hidden">Loading…</span>
         </div>
+      </div>
+    );
+  }
+
+  // Shown only in iframe mode if the parent never responded with KUMII_SESSION
+  if (iframeTimeout) {
+    return (
+      <div className="d-flex flex-column justify-content-center align-items-center vh-100 text-center px-4" style={{ background: '#F5F5F3' }}>
+        <p style={{ color: '#7a8567', fontWeight: 600, marginBottom: 8 }}>Session handoff timed out.</p>
+        <p style={{ color: '#888', fontSize: 14 }}>Please refresh the page or log in again from the parent app.</p>
+        <button
+          className="btn btn-sm mt-2"
+          style={{ background: '#7a8567', color: '#fff', border: 'none' }}
+          onClick={() => window.location.reload()}
+        >Retry</button>
       </div>
     );
   }
@@ -120,8 +161,7 @@ function App() {
             path="/login"
             element={
               !session
-                // In iframe: stay on loading spinner while waiting for postMessage; never show login form
-                ? inIframe ? <div className="d-flex justify-content-center align-items-center vh-100" style={{ background: '#F5F5F3' }}><div className="spinner-border" style={{ color: '#7a8567' }} role="status" /></div> : <LoginPage />
+                ? <LoginPage />
                 : <Navigate to="/dashboard" />
             }
           />
