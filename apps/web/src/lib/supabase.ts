@@ -12,6 +12,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
+    storageKey: 'kumii-collab-auth', // isolate from Lovable's own Supabase localStorage key
   },
   realtime: {
     params: {

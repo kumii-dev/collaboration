@@ -74,9 +74,13 @@ function App() {
       // ── KUMII_SESSION: inject the Supabase session ────────────────────────
       if (type === 'KUMII_SESSION' && access_token && refresh_token) {
         const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
-        if (!error) {
+        if (!error && data.session) {
           setSession(data.session);
           setLoading(false);
+        } else {
+          // Token may be expired — ask parent to send a fresh one by pinging again
+          console.warn('[Kumii] setSession failed, requesting fresh session', error?.message);
+          window.parent.postMessage({ type: 'KUMII_READY' }, '*');
         }
         return;
       }
@@ -96,35 +100,46 @@ function App() {
 
     // ── Initial session check (handles direct / standalone visits) ───────────
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      // In iframe: stay loading until KUMII_SESSION arrives — unless already
-      // authenticated (e.g. Supabase persisted the session in localStorage).
-      if (!inIframe || session) setLoading(false);
+      if (session) {
+        // Already have a valid persisted session — no need to wait for parent
+        setSession(session);
+        setLoading(false);
+      } else if (!inIframe) {
+        // Standalone mode: no session = show login
+        setLoading(false);
+      }
+      // In iframe with no session: stay loading and wait for KUMII_SESSION
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      // In iframe mode: ignore session-null events (token refresh gap) —
-      // the parent will re-send KUMII_SESSION via onAuthStateChange on its side.
+      // In iframe: ignore null events — these are token refresh gaps.
+      // The parent will send a fresh KUMII_SESSION; we don't want to flash
+      // a reconnect screen mid-session.
       if (inIframe && !session) return;
+
+      // Accept positive auth events (SIGNED_IN, TOKEN_REFRESHED) in all modes
       setSession(session);
+      if (session) setLoading(false);
     });
 
-    // ── KUMII_READY pings — retry every 800 ms until parent responds ─────────
+    // ── KUMII_READY pings — retry every 800 ms, max 25 retries (~20 s) ───────
     if (inIframe) {
       const ping = () => window.parent.postMessage({ type: 'KUMII_READY' }, '*');
-      ping();
+      ping(); // immediate first ping
 
       let retries = 0;
       const interval = setInterval(() => {
-        if (++retries >= 15) clearInterval(interval); // ~12 s total
+        retries++;
         ping();
+        if (retries >= 25) clearInterval(interval); // ~20 s total
       }, 800);
 
-      // After 15 s with no response, clear loading — will re-ping below
+      // After 20 s with no KUMII_SESSION, give up on auto-auth and show hint
       const fallbackTimer = setTimeout(() => {
         setIframeTimeout(true);
         setLoading(false);
-      }, 15000);
+        clearInterval(interval);
+      }, 20000);
 
       return () => {
         subscription.unsubscribe();
@@ -155,13 +170,45 @@ function App() {
   if (inIframe && !session) {
     return (
       <div className="d-flex flex-column justify-content-center align-items-center vh-100 text-center px-4" style={{ background: '#F5F5F3' }}>
-        <div className="spinner-border mb-3" style={{ color: '#7a8567' }} role="status">
-          <span className="visually-hidden">Reconnecting…</span>
-        </div>
-        <p style={{ color: '#7a8567', fontWeight: 600, marginBottom: 4 }}>Connecting to your session…</p>
-        <p style={{ color: '#aaa', fontSize: 13 }}>
-          {iframeTimeout ? 'Please refresh the page if this takes too long.' : 'Waiting for Kumii to pass your session.'}
-        </p>
+        {!iframeTimeout ? (
+          <>
+            <div className="spinner-border mb-3" style={{ color: '#7a8567' }} role="status">
+              <span className="visually-hidden">Reconnecting…</span>
+            </div>
+            <p style={{ color: '#7a8567', fontWeight: 600, marginBottom: 4 }}>Connecting to your session…</p>
+            <p style={{ color: '#aaa', fontSize: 13 }}>Waiting for Kumii to pass your credentials.</p>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🔒</div>
+            <p style={{ color: '#7a8567', fontWeight: 600, marginBottom: 4 }}>Session not received</p>
+            <p style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>
+              The community app did not receive your login credentials from Kumii.
+            </p>
+            <button
+              onClick={() => {
+                // Re-ping parent and restart the wait window
+                setIframeTimeout(false);
+                setLoading(true);
+                window.parent.postMessage({ type: 'KUMII_READY' }, '*');
+                // Give another 20 s
+                setTimeout(() => { setIframeTimeout(true); setLoading(false); }, 20000);
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '10px 24px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '14px',
+              }}
+            >
+              Try again
+            </button>
+          </>
+        )}
       </div>
     );
   }

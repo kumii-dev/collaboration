@@ -25,32 +25,58 @@ Paste the following into Lovable:
 > export default function CommunityPage() {
 >   const iframeRef = useRef<HTMLIFrameElement>(null);
 >   const [ready, setReady] = useState(false);
->   const sessionSentRef = useRef(false);
+>   // Use a timestamp ref so we re-send if the iframe re-pings after >5 s
+>   const lastSentAtRef = useRef<number>(0);
+>
+>   const sendSession = async () => {
+>     const { data: { session } } = await supabase.auth.getSession();
+>     if (!session) return; // user not logged in
+>     iframeRef.current?.contentWindow?.postMessage(
+>       {
+>         type: 'KUMII_SESSION',
+>         access_token: session.access_token,
+>         refresh_token: session.refresh_token,
+>       },
+>       COLLAB_URL
+>     );
+>     lastSentAtRef.current = Date.now();
+>   };
 >
 >   useEffect(() => {
 >     const handleMessage = async (event: MessageEvent) => {
->       // Only accept signals from the collaboration app
 >       if (event.origin !== COLLAB_URL) return;
 >       if (event.data?.type !== 'KUMII_READY') return;
->       // Guard — only send the session once even if KUMII_READY fires repeatedly
->       if (sessionSentRef.current) return;
->       sessionSentRef.current = true;
 >
->       const { data: { session } } = await supabase.auth.getSession();
->       if (!session) return; // user is not logged in — iframe will show its own login
+>       // Re-send if: never sent, OR last send was >5 s ago (retry scenario)
+>       const timeSinceLast = Date.now() - lastSentAtRef.current;
+>       if (timeSinceLast < 5000) return;
 >
->       iframeRef.current?.contentWindow?.postMessage(
->         {
->           type: 'KUMII_SESSION',
->           access_token: session.access_token,
->           refresh_token: session.refresh_token,
->         },
->         COLLAB_URL
->       );
+>       await sendSession();
 >     };
 >
 >     window.addEventListener('message', handleMessage);
->     return () => window.removeEventListener('message', handleMessage);
+>
+>     // Also re-send whenever the Supabase session refreshes (keeps iframe in sync)
+>     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+>       if (!session) return;
+>       // Only push to iframe if it's already loaded
+>       if (iframeRef.current) {
+>         iframeRef.current.contentWindow?.postMessage(
+>           {
+>             type: 'KUMII_SESSION',
+>             access_token: session.access_token,
+>             refresh_token: session.refresh_token,
+>           },
+>           COLLAB_URL
+>         );
+>         lastSentAtRef.current = Date.now();
+>       }
+>     });
+>
+>     return () => {
+>       window.removeEventListener('message', handleMessage);
+>       subscription.unsubscribe();
+>     };
 >   }, []);
 >
 >   return (
@@ -71,7 +97,11 @@ Paste the following into Lovable:
 >           width: '100%',
 >           display: ready ? 'block' : 'none',
 >         }}
->         onLoad={() => setReady(true)}
+>         onLoad={() => {
+>           setReady(true);
+>           // Send session immediately when iframe finishes loading
+>           sendSession();
+>         }}
 >       />
 >     </div>
 >   );
@@ -81,7 +111,9 @@ Paste the following into Lovable:
 > **Critical notes:**
 > - The `supabase` import path (`@/integrations/supabase/client`) must match wherever the Supabase client is initialised in this project.
 > - Both apps share the same Supabase project — the tokens are valid on both sides automatically.
-> - The iframe will keep retrying the `KUMII_READY` signal every 800 ms for up to 12 seconds, so the `sessionSentRef` guard ensures we only respond once.
+> - `lastSentAtRef` replaces the old `sessionSentRef` boolean — it allows re-sending if the iframe re-pings after 5 s (handles slow connections and the "Try again" button).
+> - The `onAuthStateChange` subscription keeps the iframe session in sync when the parent refreshes its token.
+> - The `onLoad` callback sends the session immediately on iframe load as a belt-and-braces measure alongside the postMessage listener.
 > - Do **not** wrap the iframe in a scrollable container — it manages its own scroll internally.
 
 ---
