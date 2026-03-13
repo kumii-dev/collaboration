@@ -1,10 +1,11 @@
 import { useQuery } from 'react-query';
-import { Card, Row, Col, Badge, ListGroup, Spinner, Button } from 'react-bootstrap';
+import { Card, Row, Col, Badge, ListGroup, Spinner, Button, ProgressBar } from 'react-bootstrap';
 import { FiMessageSquare, FiUsers, FiTrendingUp, FiActivity, FiArrowRight, FiBell, FiUser, FiShield } from 'react-icons/fi';
 import { BsPeopleFill } from 'react-icons/bs';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
+import { useKumii } from '../../lib/KumiiContext';
 
 interface DashboardStats {
   total_conversations: number;
@@ -35,6 +36,15 @@ interface TrendingThread {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { profile, startup } = useKumii();
+
+  // Derived display values from the Lovable profile (falls back gracefully)
+  const displayName = profile
+    ? [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email || 'there'
+    : 'there';
+  const avatarUrl = profile?.profile_picture_url ?? null;
+  const personaType = profile?.persona_type ?? null;
+  const completion = profile?.profile_completion_percentage ?? null;
 
   // Fetch dashboard stats
   const { data: stats, isLoading: loadingStats } = useQuery(
@@ -79,9 +89,59 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h2 className="mb-1">Dashboard</h2>
-        <p className="text-muted">Welcome back! Here's what's happening.</p>
+      {/* ── Personalised welcome header ──────────────────────────────────── */}
+      <div className="mb-4 d-flex align-items-center gap-3">
+        {/* Avatar */}
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={displayName}
+            style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', border: '2px solid #c5df96', flexShrink: 0 }}
+          />
+        ) : (
+          <div style={{
+            width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
+            background: 'linear-gradient(135deg,#7a8567,#c5df96)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontWeight: 700, fontSize: '1.2rem',
+          }}>
+            {displayName.charAt(0).toUpperCase()}
+          </div>
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <h2 className="mb-0" style={{ fontSize: '1.3rem' }}>
+              Welcome back, {displayName}!
+            </h2>
+            {personaType && (
+              <Badge style={{ background: 'linear-gradient(135deg,#7a8567,#c5df96)', color: '#fff', fontWeight: 500, fontSize: '0.72rem' }}>
+                {personaType}
+              </Badge>
+            )}
+            {startup?.company_name && (
+              <Badge bg="light" text="dark" style={{ fontWeight: 400, fontSize: '0.72rem', border: '1px solid #E5E5E3' }}>
+                {startup.company_name}
+              </Badge>
+            )}
+          </div>
+          {/* Profile completion bar — only show if incomplete */}
+          {completion !== null && completion < 100 && (
+            <div className="mt-1" style={{ maxWidth: 260 }}>
+              <div className="d-flex justify-content-between mb-1" style={{ fontSize: '0.72rem', color: '#888' }}>
+                <span>Profile completion</span>
+                <span>{completion}%</span>
+              </div>
+              <ProgressBar
+                now={completion}
+                style={{ height: 4, borderRadius: 4 }}
+                variant="success"
+              />
+            </div>
+          )}
+          {completion === null && (
+            <p className="text-muted mb-0" style={{ fontSize: '0.88rem' }}>Here's what's happening in your community.</p>
+          )}
+        </div>
       </div>
 
       {/* ── Hero Navigation Cards ─────────────────────────────────────────── */}

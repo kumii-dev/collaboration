@@ -89,14 +89,65 @@ Paste the following into Lovable:
 ## How the handshake works
 
 ```
-Lovable app (parent)          Collaboration iframe (child)
-──────────────────────────    ──────────────────────────────
-                              loads → posts KUMII_READY
-receives KUMII_READY    ←
-gets supabase session
-posts KUMII_SESSION     →
-                              calls supabase.auth.setSession()
-                              renders dashboard ✅
+Parent (kumii.africa)             Iframe (communities-ten.vercel.app)
+─────────────────────             ───────────────────────────────────
+                                  loads → posts KUMII_READY
+receives KUMII_READY         ←
+posts KUMII_SESSION          →    calls supabase.auth.setSession()
+                                  renders dashboard
+fetches profile + startup
+posts KUMII_PROFILE          →    stores in KumiiContext + localStorage ✅
+```
+
+### KUMII_PROFILE payload shape
+
+```ts
+// profile
+{
+  user_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  location: string | null;
+  bio: string | null;
+  organization: string | null;
+  persona_type: string | null;
+  linkedin_url: string | null;
+  twitter_url: string | null;
+  industry_sectors: string[] | null;
+  skills: string[] | null;
+  interests: string[] | null;
+  profile_picture_url: string | null;
+  profile_completion_percentage: number | null;
+}
+
+// startup (or null)
+{
+  company_name: string | null;
+  industry: string | null;
+  stage: string | null;
+  description: string | null;
+  location: string | null;
+  website: string | null;
+  team_size: number | null;
+  founded_year: number | null;
+  key_products_services: string | null;
+  market_access_needs: string | null;
+  challenges: string | null;
+}
+```
+
+### Using the profile inside the collaboration app
+
+```ts
+import { useKumii } from '@/lib/KumiiContext';
+
+function MyComponent() {
+  const { profile, startup } = useKumii();
+  // profile.first_name, profile.persona_type, profile.profile_picture_url …
+  // startup?.company_name, startup?.stage …
+}
 ```
 
 ## Trusted origins (already configured on the collaboration app)
