@@ -99,9 +99,12 @@ function App() {
     };
   }, []);
 
+  // Detect iframe context once (stable across renders)
+  const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
+
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center vh-100">
+      <div className="d-flex justify-content-center align-items-center vh-100" style={{ background: '#F5F5F3' }}>
         <div className="spinner-border" style={{ color: '#7a8567' }} role="status">
           <span className="visually-hidden">Loading…</span>
         </div>
@@ -115,7 +118,12 @@ function App() {
         <Routes>
           <Route
             path="/login"
-            element={!session ? <LoginPage /> : <Navigate to="/forum" />}
+            element={
+              !session
+                // In iframe: stay on loading spinner while waiting for postMessage; never show login form
+                ? inIframe ? <div className="d-flex justify-content-center align-items-center vh-100" style={{ background: '#F5F5F3' }}><div className="spinner-border" style={{ color: '#7a8567' }} role="status" /></div> : <LoginPage />
+                : <Navigate to="/dashboard" />
+            }
           />
           <Route
             path="/"

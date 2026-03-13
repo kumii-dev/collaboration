@@ -1,6 +1,7 @@
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, ListGroup, Spinner, Button } from 'react-bootstrap';
-import { FiMessageSquare, FiUsers, FiTrendingUp, FiActivity, FiArrowRight } from 'react-icons/fi';
+import { FiMessageSquare, FiUsers, FiTrendingUp, FiActivity, FiArrowRight, FiBell, FiUser, FiShield } from 'react-icons/fi';
+import { BsPeopleFill } from 'react-icons/bs';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
@@ -82,6 +83,91 @@ export default function DashboardPage() {
         <h2 className="mb-1">Dashboard</h2>
         <p className="text-muted">Welcome back! Here's what's happening.</p>
       </div>
+
+      {/* ── Hero Navigation Cards ─────────────────────────────────────────── */}
+      <Row className="g-3 mb-4">
+        {[
+          {
+            path: '/forum',
+            icon: <BsPeopleFill size={26} />,
+            label: 'Communities',
+            desc: 'Browse forums & join discussions',
+            gradient: 'linear-gradient(135deg,#7a8567,#c5df96)',
+          },
+          {
+            path: '/chat',
+            icon: <FiMessageSquare size={26} />,
+            label: 'Chat',
+            desc: 'Direct & group messaging',
+            gradient: 'linear-gradient(135deg,#6b8f71,#b8d4a8)',
+          },
+          {
+            path: '/notifications',
+            icon: <FiBell size={26} />,
+            label: 'Notifications',
+            desc: 'Alerts, mentions & updates',
+            gradient: 'linear-gradient(135deg,#8a9e76,#c5df96)',
+          },
+          {
+            path: '/profile',
+            icon: <FiUser size={26} />,
+            label: 'My Profile',
+            desc: 'Reputation, bio & settings',
+            gradient: 'linear-gradient(135deg,#7a8567,#a8c490)',
+          },
+          {
+            path: '/moderation',
+            icon: <FiShield size={26} />,
+            label: 'Moderation',
+            desc: 'Reports & community health',
+            gradient: 'linear-gradient(135deg,#5c7a5e,#8fbb91)',
+          },
+        ].map(({ path, icon, label, desc, gradient }) => (
+          <Col key={path} xs={6} md={4} xl={2}>
+            <Card
+              className="border-0 h-100"
+              onClick={() => navigate(path)}
+              style={{
+                cursor: 'pointer',
+                borderRadius: 16,
+                boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+                transition: 'transform 0.15s, box-shadow 0.15s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)';
+                (e.currentTarget as HTMLElement).style.boxShadow = '0 6px 20px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+                (e.currentTarget as HTMLElement).style.boxShadow = '0 2px 12px rgba(0,0,0,0.06)';
+              }}
+            >
+              {/* Gradient top accent */}
+              <div style={{ height: 6, background: gradient, borderRadius: '16px 16px 0 0' }} />
+              <Card.Body className="d-flex flex-column align-items-start p-3">
+                <div style={{
+                  width: 46, height: 46, borderRadius: 12,
+                  background: gradient,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', marginBottom: 12,
+                }}>
+                  {icon}
+                </div>
+                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#2D2D2D', marginBottom: 2 }}>
+                  {label}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#888', lineHeight: 1.3 }}>
+                  {desc}
+                </div>
+                <div style={{ marginTop: 'auto', paddingTop: 12 }}>
+                  <FiArrowRight size={16} style={{ color: '#7a8567' }} />
+                </div>
+              </Card.Body>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+      {/* ── End Hero Nav Cards ───────────────────────────────────────────── */}
 
       {/* Stats Cards */}
       <Row className="mb-4">
