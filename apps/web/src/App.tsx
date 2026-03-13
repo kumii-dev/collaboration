@@ -108,11 +108,12 @@ function App() {
         if (retries >= 12) clearInterval(interval); // stop after ~10 s
       }, 800);
 
-      // Show a helpful error if the parent never responds after 15 s
+      // If the parent never responds after 12 s, fall through to the normal
+      // login flow so the user is never permanently stuck.
       const fallbackTimer = setTimeout(() => {
         setIframeTimeout(true);
         setLoading(false);
-      }, 15000);
+      }, 12000);
 
       return () => {
         subscription.unsubscribe();
@@ -138,18 +139,18 @@ function App() {
     );
   }
 
-  // Shown only in iframe mode if the parent never responded with KUMII_SESSION
-  if (iframeTimeout) {
+  // Shown only in iframe mode if the parent never responded with KUMII_SESSION.
+  // Fall through to the normal app so the user can log in manually.
+  // (The iframeTimeout flag is preserved so MainLayout can show a slim header.)
+  if (iframeTimeout && !session) {
     return (
-      <div className="d-flex flex-column justify-content-center align-items-center vh-100 text-center px-4" style={{ background: '#F5F5F3' }}>
-        <p style={{ color: '#7a8567', fontWeight: 600, marginBottom: 8 }}>Session handoff timed out.</p>
-        <p style={{ color: '#888', fontSize: 14 }}>Please refresh the page or log in again from the parent app.</p>
-        <button
-          className="btn btn-sm mt-2"
-          style={{ background: '#7a8567', color: '#fff', border: 'none' }}
-          onClick={() => window.location.reload()}
-        >Retry</button>
-      </div>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="*" element={<LoginPage />} />
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
     );
   }
 

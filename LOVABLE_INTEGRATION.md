@@ -12,37 +12,77 @@ Paste the following into Lovable:
 
 ---
 
-> I need to embed the Kumii Collaboration module (`https://communities-ten.vercel.app`) as an iframe inside this app at https://kumii.africa/resources/category/community-networking. The collaboration app is already configured to receive a Supabase session via `postMessage` — it will post `{ type: 'KUMII_READY' }` when it loads, and expects the parent to respond with `{ type: 'KUMII_SESSION', access_token, refresh_token }` to auto-login the current user without showing a login screen.
+> The `/community` page needs to embed `https://communities-ten.vercel.app` as a full-screen iframe and pass the current user's Supabase session to it via `postMessage`.
 >
-> Please implement the following:
+> **Replace the entire content of the `/community` page** with this exact React component. Do not change the logic — only adjust styling to fit the app's design system if needed:
 >
-> 1. **replace [](https://kumii.africa/resources/category/community-networking) to render a full-screen iframe pointing to `https://communities-ten.vercel.app`. The iframe should have no border, take up the full available height (minus any navigation - sidebar and topnav), and include `allow="same-origin"`.
+> ```tsx
+> import { useEffect, useRef, useState } from 'react';
+> import { supabase } from '@/integrations/supabase/client';
 >
-> 2. **Wire the session handoff** — on mount, add a `window.addEventListener('message', ...)` listener. When a message `{ type: 'KUMII_READY' }` is received from `https://communities-ten.vercel.app`, immediately get the current Supabase session with `supabase.auth.getSession()` and post back to the iframe's `contentWindow`. **Important:** the child re-sends `KUMII_READY` every 800 ms for up to 10 s — your listener must handle repeated messages but only respond once (use a `sessionSent` flag):
+> const COLLAB_URL = 'https://communities-ten.vercel.app';
 >
-> ```js
-> let sessionSent = false;
-> const handleMessage = async (event) => {
->   if (event.origin !== 'https://communities-ten.vercel.app') return;
->   if (event.data?.type !== 'KUMII_READY' || sessionSent) return;
->   sessionSent = true;
->   const { data: { session } } = await supabase.auth.getSession();
->   if (!session) return; // user not logged in — show login prompt instead
->   iframeRef.current?.contentWindow?.postMessage(
->     { type: 'KUMII_SESSION', access_token: session.access_token, refresh_token: session.refresh_token },
->     'https://communities-ten.vercel.app'
+> export default function CommunityPage() {
+>   const iframeRef = useRef<HTMLIFrameElement>(null);
+>   const [ready, setReady] = useState(false);
+>   const sessionSentRef = useRef(false);
+>
+>   useEffect(() => {
+>     const handleMessage = async (event: MessageEvent) => {
+>       // Only accept signals from the collaboration app
+>       if (event.origin !== COLLAB_URL) return;
+>       if (event.data?.type !== 'KUMII_READY') return;
+>       // Guard — only send the session once even if KUMII_READY fires repeatedly
+>       if (sessionSentRef.current) return;
+>       sessionSentRef.current = true;
+>
+>       const { data: { session } } = await supabase.auth.getSession();
+>       if (!session) return; // user is not logged in — iframe will show its own login
+>
+>       iframeRef.current?.contentWindow?.postMessage(
+>         {
+>           type: 'KUMII_SESSION',
+>           access_token: session.access_token,
+>           refresh_token: session.refresh_token,
+>         },
+>         COLLAB_URL
+>       );
+>     };
+>
+>     window.addEventListener('message', handleMessage);
+>     return () => window.removeEventListener('message', handleMessage);
+>   }, []);
+>
+>   return (
+>     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}>
+>       {!ready && (
+>         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F5F5F3' }}>
+>           <span>Loading community…</span>
+>         </div>
+>       )}
+>       <iframe
+>         ref={iframeRef}
+>         src={COLLAB_URL}
+>         title="Kumii Collaboration"
+>         allow="same-origin"
+>         style={{
+>           flex: 1,
+>           border: 'none',
+>           width: '100%',
+>           display: ready ? 'block' : 'none',
+>         }}
+>         onLoad={() => setReady(true)}
+>       />
+>     </div>
 >   );
-> };
-> window.addEventListener('message', handleMessage);
+> }
 > ```
 >
-> 3. **Add a navigation entry** — add a "Community" or "Collaborate" link/tab in the app's main navigation that routes to this page. Use a suitable icon (e.g. people/community icon).
->
-> 4. **Handle loading state** — show a subtle spinner or skeleton while the iframe is loading (`onLoad` to clear it).
->
-> 5. **Handle unauthenticated state** — if `supabase.auth.getSession()` returns no session, do not render the iframe; instead show a message prompting the user to log in first.
->
-> The target origin for all `postMessage` calls must be exactly `'https://communities-ten.vercel.app'`. Clean up the event listener on component unmount.
+> **Critical notes:**
+> - The `supabase` import path (`@/integrations/supabase/client`) must match wherever the Supabase client is initialised in this project.
+> - Both apps share the same Supabase project — the tokens are valid on both sides automatically.
+> - The iframe will keep retrying the `KUMII_READY` signal every 800 ms for up to 12 seconds, so the `sessionSentRef` guard ensures we only respond once.
+> - Do **not** wrap the iframe in a scrollable container — it manages its own scroll internally.
 
 ---
 
