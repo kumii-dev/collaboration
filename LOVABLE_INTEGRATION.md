@@ -242,6 +242,8 @@ function MyComponent() {
 
 ## Notes
 
-- The session `access_token` and `refresh_token` come from the Lovable app's own Supabase client — both apps must share the **same Supabase project** so the token is valid on both sides.
+- The session `access_token` and `refresh_token` come from the Lovable app's own Supabase client. The collaboration app's server automatically exchanges Lovable tokens for valid tokens in its own Supabase project — **the two apps do not need to share the same Supabase project**.
+- First-time users are provisioned silently in the collaboration project on their first visit — no manual account creation needed.
 - The collaboration app will auto-refresh the token via Supabase's built-in `autoRefreshToken: true` after the initial handoff.
 - If the user logs out in the parent app, call `supabase.auth.signOut()` and reload the iframe to clear the child session too.
+- The `KUMII_SESSION_EXPIRED` message from the iframe means the exchanged token expired mid-session. The Lovable component handles this by calling `refreshSession()` and resending — the exchange endpoint will provision a fresh session automatically.
