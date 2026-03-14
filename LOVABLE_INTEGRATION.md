@@ -30,8 +30,13 @@ Paste the following into Lovable:
 >   const lastSentAtRef = useRef<number>(0);
 >
 >   const sendSession = async () => {
->     const { data: { session } } = await supabase.auth.getSession();
->     if (!session) return; // user not logged in
+>     // Try the cached session first; if it's gone, force a refresh
+>     let { data: { session } } = await supabase.auth.getSession();
+>     if (!session) {
+>       const { data: refreshed } = await supabase.auth.refreshSession();
+>       session = refreshed.session;
+>     }
+>     if (!session) return; // user is genuinely not logged in
 >     iframeRef.current?.contentWindow?.postMessage(
 >       {
 >         type: 'KUMII_SESSION',
@@ -53,6 +58,25 @@ Paste the following into Lovable:
 >         const timeSinceLast = Date.now() - lastSentAtRef.current;
 >         if (timeSinceLast < 500) return;
 >         await sendSession();
+>         return;
+>       }
+>
+>       // ── KUMII_SESSION_EXPIRED: iframe received an expired token ──────────
+>       // Force-refresh the Supabase session in this parent window, then resend.
+>       // This prevents an infinite loop of sending the same dead token.
+>       if (event.data?.type === 'KUMII_SESSION_EXPIRED') {
+>         const { data } = await supabase.auth.refreshSession();
+>         if (data.session) {
+>           iframeRef.current?.contentWindow?.postMessage(
+>             {
+>               type: 'KUMII_SESSION',
+>               access_token: data.session.access_token,
+>               refresh_token: data.session.refresh_token,
+>             },
+>             COLLAB_URL
+>           );
+>           lastSentAtRef.current = Date.now();
+>         }
 >         return;
 >       }
 >
@@ -153,6 +177,7 @@ calls window.open(url)            opens in new tab ✅
 | iframe → parent | `KUMII_READY` | Collaboration app | Signals iframe is loaded; requests session |
 | parent → iframe | `KUMII_SESSION` | Lovable | Delivers `access_token` + `refresh_token` |
 | parent → iframe | `KUMII_PROFILE` | Lovable | Delivers user profile + startup data |
+| iframe → parent | `KUMII_SESSION_EXPIRED` | Collaboration app | Token was rejected — parent must `refreshSession()` then resend |
 | iframe → parent | `KUMII_OPEN_URL` | Collaboration app | Asks parent to open external URL / file download |
 
 ### KUMII_PROFILE payload shape

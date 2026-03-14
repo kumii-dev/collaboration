@@ -48,10 +48,16 @@ const TRUSTED_PATTERNS = [
   /^https:\/\/[a-z0-9-]+\.gptengineer\.app$/,
 ];
 function isTrustedOrigin(origin: string) {
-  return (
+  const trusted = (
     TRUSTED_ORIGINS.includes(origin) ||
     TRUSTED_PATTERNS.some(p => p.test(origin))
   );
+  if (!trusted) {
+    // Log untrusted origins so origin-mismatch bugs are immediately visible
+    // in the browser console without requiring source access.
+    console.warn('[Kumii] postMessage from untrusted origin ignored:', origin);
+  }
+  return trusted;
 }
 
 function App() {
@@ -88,9 +94,10 @@ function App() {
           if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
           if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
         } else {
-          // Token may be expired — ask parent to send a fresh one by pinging again
-          console.warn('[Kumii] setSession failed, requesting fresh session', error?.message);
-          window.parent.postMessage({ type: 'KUMII_READY' }, '*');
+          // Token is expired — tell Lovable to refresh its own session, then resend.
+          // Sending KUMII_READY would just get the same expired token back.
+          console.warn('[Kumii] setSession failed:', error?.message, '— requesting token refresh from parent');
+          window.parent.postMessage({ type: 'KUMII_SESSION_EXPIRED' }, '*');
         }
         return;
       }
