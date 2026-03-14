@@ -25,7 +25,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { supabaseAdmin } from '../supabase.js';
+import { supabase, supabaseAdmin } from '../supabase.js';
 
 const router = Router();
 
@@ -69,26 +69,25 @@ router.post('/exchange', async (req: Request, res: Response) => {
 
   try {
     // ── 2. Look up or create the user in THIS Supabase project ───────────────
-    // Try to find by email first
-    const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-    
+    // listUsers with a filter does a server-side search by email — no full scan,
+    // works correctly at any user count.
+    const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ filter: `email.eq.${email}` } as Parameters<typeof supabaseAdmin.auth.admin.listUsers>[0]);
+    const existingUser = listData?.users?.[0];
+
     let userId: string | undefined;
-    
-    if (!listError && listData) {
-      const existing = listData.users.find(u => u.email === email);
-      if (existing) {
-        userId = existing.id;
-        // Update display name / metadata from Lovable if available
-        const meta = payload.user_metadata as Record<string, unknown> | undefined;
-        if (meta) {
-          await supabaseAdmin.auth.admin.updateUserById(userId, {
-            user_metadata: {
-              ...meta,
-              lovable_user_id: lovableUserId,
-              synced_from_lovable: true,
-            },
-          });
-        }
+
+    if (existingUser) {
+      userId = existingUser.id;
+      // Sync any updated metadata from Lovable (display name, avatar, etc.)
+      const meta = payload.user_metadata as Record<string, unknown> | undefined;
+      if (meta) {
+        await supabaseAdmin.auth.admin.updateUserById(userId, {
+          user_metadata: {
+            ...meta,
+            lovable_user_id: lovableUserId,
+            synced_from_lovable: true,
+          },
+        });
       }
     }
 
@@ -139,16 +138,8 @@ router.post('/exchange', async (req: Request, res: Response) => {
     }
 
     // ── 5. Exchange the OTP for a real Supabase session ──────────────────────
-    // We use the public (anon) client here because verifyOtp is a public operation.
-    // Import supabase (anon client) alongside supabaseAdmin.
-    const { createClient } = await import('@supabase/supabase-js');
-    const anonClient = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_ANON_KEY!,
-      { auth: { persistSession: false, autoRefreshToken: false } }
-    );
-
-    const { data: sessionData, error: sessionError } = await anonClient.auth.verifyOtp({
+    // verifyOtp is a public operation — use the module-level anon client.
+    const { data: sessionData, error: sessionError } = await supabase.auth.verifyOtp({
       email,
       token: otpToken,
       type: 'magiclink',
