@@ -7,6 +7,7 @@ import logger from './logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 // Import routes
+import authRoutes from './routes/auth.js';
 import chatRoutes from './routes/chat.js';
 import forumRoutes from './routes/forum.js';
 import moderationRoutes from './routes/moderation.js';
@@ -123,6 +124,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/forum', forumRoutes);
 app.use('/api/moderation', moderationRoutes);

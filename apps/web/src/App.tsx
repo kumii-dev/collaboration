@@ -64,9 +64,6 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [iframeTimeout, setIframeTimeout] = useState(false);
-  // Set to true when setSession fails with a JWT signature error — means
-  // Lovable is using a different Supabase project than this app.
-  const [wrongProject, setWrongProject] = useState(false);
 
   // Refs to the active ping interval + fallback timer so "Try again" can restart them
   const activeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -89,31 +86,58 @@ function App() {
 
       // ── KUMII_SESSION: inject the Supabase session ────────────────────────
       if (type === 'KUMII_SESSION' && access_token && refresh_token) {
+        // First try setSession directly — works when both apps share the same
+        // Supabase project.
         const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
+
         if (!error && data.session) {
           setSession(data.session);
           setLoading(false);
-          // Clear the ping interval — session received successfully
           if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
           if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
-        } else {
-          const msg = error?.message ?? '';
-          // "Invalid JWT" / "invalid signature" = token was issued by a DIFFERENT
-          // Supabase project. No amount of refreshing will fix this — the operator
-          // needs to point Lovable at the same Supabase project as this app.
-          const isWrongProject = /invalid.*jwt|invalid.*sig|jwt.*invalid/i.test(msg);
-          if (isWrongProject) {
-            console.error('[Kumii] setSession rejected — Lovable is using a different Supabase project.', msg);
-            setWrongProject(true);
-            setIframeTimeout(true);
-            setLoading(false);
-            if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
-            if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
-          } else {
-            // Token is expired — tell Lovable to refresh its own session, then resend.
-            console.warn('[Kumii] setSession failed:', msg, '— requesting token refresh from parent');
-            window.parent.postMessage({ type: 'KUMII_SESSION_EXPIRED' }, '*');
+          return;
+        }
+
+        // setSession failed — most likely a different Supabase project (wrong JWT
+        // secret). Fall back to the server-side token exchange endpoint, which
+        // provisions the user in this project and returns a valid session.
+        const isWrongProject = /invalid.*jwt|invalid.*sig|jwt.*invalid/i.test(error?.message ?? '');
+        if (isWrongProject || error) {
+          console.warn('[Kumii] setSession failed, attempting server-side token exchange…', error?.message);
+          try {
+            const resp = await fetch('/api/auth/exchange', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ access_token, refresh_token }),
+            });
+            if (resp.ok) {
+              const exchanged = await resp.json();
+              const { data: exchData, error: exchError } = await supabase.auth.setSession({
+                access_token: exchanged.access_token,
+                refresh_token: exchanged.refresh_token,
+              });
+              if (!exchError && exchData.session) {
+                console.log('[Kumii] Token exchange succeeded — user provisioned in this project');
+                setSession(exchData.session);
+                setLoading(false);
+                if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+                if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
+                return;
+              }
+              console.error('[Kumii] setSession after exchange failed:', exchError?.message);
+            } else {
+              const body = await resp.json().catch(() => ({}));
+              console.error('[Kumii] Token exchange endpoint error:', resp.status, body);
+            }
+          } catch (fetchErr) {
+            console.error('[Kumii] Token exchange fetch failed:', fetchErr);
           }
+          // Exchange also failed — show timeout UI (not wrongProject config error,
+          // since the exchange endpoint handles cross-project users gracefully)
+          setIframeTimeout(true);
+          setLoading(false);
+          if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+          if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
         }
         return;
       }
@@ -219,18 +243,14 @@ function App() {
           </>
         ) : (
           <>
-            <div style={{ fontSize: '2rem', marginBottom: '12px' }}>{wrongProject ? '⚙️' : '🔒'}</div>
+            <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🔒</div>
             <p style={{ color: '#7a8567', fontWeight: 600, marginBottom: 4 }}>
-              {wrongProject ? 'Configuration error' : 'Session not received'}
+              Session not received
             </p>
             <p style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>
-              {wrongProject
-                ? 'The Kumii community app and the main Kumii app are using different Supabase projects. Please contact support.'
-                : 'The community app did not receive your login credentials from Kumii.'
-              }
+              The community app did not receive your login credentials from Kumii.
             </p>
-            {!wrongProject && (
-              <button
+            <button
                 onClick={() => {
                   // Clear any stale timers
                   if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
@@ -272,7 +292,6 @@ function App() {
               >
                 Try again
               </button>
-            )}
           </>
         )}
       </div>
