@@ -138,7 +138,7 @@ router.post('/exchange', async (req: Request, res: Response) => {
     if (!tokenResp.ok) {
       const errBody = await tokenResp.json().catch(() => ({}));
       console.error('[auth/exchange] token endpoint error:', tokenResp.status, errBody);
-      return res.status(500).json({ error: 'Failed to create session', detail: errBody });
+      return res.status(500).json({ error: 'Failed to create session' });
     }
 
     const tokenData = await tokenResp.json() as {
