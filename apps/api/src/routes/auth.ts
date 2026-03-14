@@ -82,10 +82,18 @@ router.post('/exchange', async (req: Request, res: Response) => {
 
   try {
     // ── 2. Look up existing user ──────────────────────────────────────────────
-    const { data: listData } = await supabaseAdmin.auth.admin.listUsers(
-      { filter: `email.eq.${email}` } as Parameters<typeof supabaseAdmin.auth.admin.listUsers>[0]
+    // Note: supabaseAdmin.auth.admin.listUsers() `filter` option is not reliably
+    // supported by all versions of the JS client, so we use the admin REST API
+    // directly to search by email.
+    const supabaseUrl = process.env.SUPABASE_URL!;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+    const searchResp = await fetch(
+      `${supabaseUrl}/auth/v1/admin/users?filter=${encodeURIComponent(`email.eq.${email}`)}`,
+      { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
     );
-    const existingUser = listData?.users?.[0];
+    const searchData = await searchResp.json() as { users?: Array<{ id: string; user_metadata?: Record<string, unknown>; encrypted_password?: string }> };
+    const existingUser = searchData.users?.[0];
 
     if (existingUser) {
       // Ensure the deterministic password is set (idempotent update)
@@ -122,9 +130,6 @@ router.post('/exchange', async (req: Request, res: Response) => {
     // We call the token endpoint directly with the service_role key as apikey.
     // This bypasses client-side email signup restrictions and works regardless
     // of whether "Enable email provider" is toggled in Supabase dashboard.
-    const supabaseUrl = process.env.SUPABASE_URL!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
     const tokenResp = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
       method: 'POST',
       headers: {
