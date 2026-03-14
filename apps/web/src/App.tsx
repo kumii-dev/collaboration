@@ -64,6 +64,9 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [iframeTimeout, setIframeTimeout] = useState(false);
+  // Set to true when setSession fails with a JWT signature error — means
+  // Lovable is using a different Supabase project than this app.
+  const [wrongProject, setWrongProject] = useState(false);
 
   // Refs to the active ping interval + fallback timer so "Try again" can restart them
   const activeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -94,10 +97,23 @@ function App() {
           if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
           if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
         } else {
-          // Token is expired — tell Lovable to refresh its own session, then resend.
-          // Sending KUMII_READY would just get the same expired token back.
-          console.warn('[Kumii] setSession failed:', error?.message, '— requesting token refresh from parent');
-          window.parent.postMessage({ type: 'KUMII_SESSION_EXPIRED' }, '*');
+          const msg = error?.message ?? '';
+          // "Invalid JWT" / "invalid signature" = token was issued by a DIFFERENT
+          // Supabase project. No amount of refreshing will fix this — the operator
+          // needs to point Lovable at the same Supabase project as this app.
+          const isWrongProject = /invalid.*jwt|invalid.*sig|jwt.*invalid/i.test(msg);
+          if (isWrongProject) {
+            console.error('[Kumii] setSession rejected — Lovable is using a different Supabase project.', msg);
+            setWrongProject(true);
+            setIframeTimeout(true);
+            setLoading(false);
+            if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+            if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
+          } else {
+            // Token is expired — tell Lovable to refresh its own session, then resend.
+            console.warn('[Kumii] setSession failed:', msg, '— requesting token refresh from parent');
+            window.parent.postMessage({ type: 'KUMII_SESSION_EXPIRED' }, '*');
+          }
         }
         return;
       }
@@ -203,53 +219,60 @@ function App() {
           </>
         ) : (
           <>
-            <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🔒</div>
-            <p style={{ color: '#7a8567', fontWeight: 600, marginBottom: 4 }}>Session not received</p>
-            <p style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>
-              The community app did not receive your login credentials from Kumii.
+            <div style={{ fontSize: '2rem', marginBottom: '12px' }}>{wrongProject ? '⚙️' : '🔒'}</div>
+            <p style={{ color: '#7a8567', fontWeight: 600, marginBottom: 4 }}>
+              {wrongProject ? 'Configuration error' : 'Session not received'}
             </p>
-            <button
-              onClick={() => {
-                // Clear any stale timers
-                if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
-                if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
+            <p style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>
+              {wrongProject
+                ? 'The Kumii community app and the main Kumii app are using different Supabase projects. Please contact support.'
+                : 'The community app did not receive your login credentials from Kumii.'
+              }
+            </p>
+            {!wrongProject && (
+              <button
+                onClick={() => {
+                  // Clear any stale timers
+                  if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+                  if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
 
-                // Reset UI back to spinner
-                setIframeTimeout(false);
-                setLoading(true);
+                  // Reset UI back to spinner
+                  setIframeTimeout(false);
+                  setLoading(true);
 
-                // Restart full ping cadence — 800 ms × 25 = 20 s
-                const ping = () => window.parent.postMessage({ type: 'KUMII_READY' }, '*');
-                ping(); // immediate
-                let retries = 0;
-                const interval = setInterval(() => {
-                  retries++;
-                  ping();
-                  if (retries >= 25) clearInterval(interval);
-                }, 800);
-                activeIntervalRef.current = interval;
+                  // Restart full ping cadence — 800 ms × 25 = 20 s
+                  const ping = () => window.parent.postMessage({ type: 'KUMII_READY' }, '*');
+                  ping(); // immediate
+                  let retries = 0;
+                  const interval = setInterval(() => {
+                    retries++;
+                    ping();
+                    if (retries >= 25) clearInterval(interval);
+                  }, 800);
+                  activeIntervalRef.current = interval;
 
-                // New 20 s fallback
-                const fallback = setTimeout(() => {
-                  setIframeTimeout(true);
-                  setLoading(false);
-                  clearInterval(interval);
-                }, 20000);
-                activeFallbackRef.current = fallback;
-              }}
-              style={{
-                background: 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '10px 24px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontSize: '14px',
-              }}
-            >
-              Try again
-            </button>
+                  // New 20 s fallback
+                  const fallback = setTimeout(() => {
+                    setIframeTimeout(true);
+                    setLoading(false);
+                    clearInterval(interval);
+                  }, 20000);
+                  activeFallbackRef.current = fallback;
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '10px 24px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                }}
+              >
+                Try again
+              </button>
+            )}
           </>
         )}
       </div>
