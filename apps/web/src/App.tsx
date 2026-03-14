@@ -10,6 +10,7 @@ import {
   saveKumiiProfile,
   loadKumiiProfile,
 } from './lib/KumiiContext';
+import { registerAppHandler } from './lib/messageBuffer';
 
 // Layouts
 import MainLayout from './components/layouts/MainLayout';
@@ -69,7 +70,9 @@ function App() {
   const [kumiiStartup, setKumiiStartup] = useState<KumiiStartup | null>(cached.startup);
 
   useEffect(() => {
-    // ── Message listener — registered FIRST to never miss early messages ─────
+    // ── Message handler — registered via messageBuffer so messages that
+    // arrived before React mounted are replayed immediately. This eliminates
+    // the race where Lovable sends KUMII_SESSION before useEffect fires. ────
     const handleMessage = async (event: MessageEvent) => {
       if (!isTrustedOrigin(event.origin)) return;
 
@@ -81,6 +84,9 @@ function App() {
         if (!error && data.session) {
           setSession(data.session);
           setLoading(false);
+          // Clear the ping interval — session received successfully
+          if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+          if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
         } else {
           // Token may be expired — ask parent to send a fresh one by pinging again
           console.warn('[Kumii] setSession failed, requesting fresh session', error?.message);
@@ -100,7 +106,9 @@ function App() {
       }
     };
 
-    window.addEventListener('message', handleMessage);
+    // Register with the module-level buffer — drains any messages that
+    // arrived before this useEffect ran, then forwards future ones directly.
+    const unregister = registerAppHandler(handleMessage);
 
     // ── Initial session check (handles direct / standalone visits) ───────────
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -150,16 +158,16 @@ function App() {
       activeFallbackRef.current = fallbackTimer;
 
       return () => {
+        unregister();
         subscription.unsubscribe();
-        window.removeEventListener('message', handleMessage);
         clearInterval(interval);
         clearTimeout(fallbackTimer);
       };
     }
 
     return () => {
+      unregister();
       subscription.unsubscribe();
-      window.removeEventListener('message', handleMessage);
     };
   }, []);
 
