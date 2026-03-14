@@ -6,24 +6,24 @@
  * this project's Supabase because the JWT is signed by a different secret.
  *
  * Flow:
- *  1. Browser (in iframe) POSTs the Lovable access_token + refresh_token here.
- *  2. We decode the JWT payload (no signature check — we trust the iframe bridge)
- *     to extract the user's email and Lovable user ID (sub).
- *  3. We use supabaseAdmin to upsert the user in THIS project's auth.users table.
- *  4. We call auth.admin.generateLink({ type: 'magiclink' }) to get a one-time
- *     token, then immediately exchange it for a real session (access + refresh).
- *  5. We return the new access_token + refresh_token to the frontend.
- *     The frontend calls setSession() with these — they are valid for THIS project.
+ *  1. Browser (in iframe) POSTs the Lovable access_token here.
+ *  2. We decode the JWT payload (no signature check — we trust the postMessage
+ *     bridge) to extract the user's email and Lovable user ID (sub).
+ *  3. We use supabaseAdmin to upsert the user in THIS project's auth.users,
+ *     setting a deterministic password = HMAC-SHA256(sub, EXCHANGE_SECRET).
+ *  4. We call supabase.auth.signInWithPassword() with that password to get a
+ *     real session (access_token + refresh_token) for THIS project.
+ *  5. We return those tokens to the frontend — setSession() will succeed.
  *
- * Security notes:
- *  - This endpoint is only callable from trusted origins (enforced by CORS).
- *  - We do NOT verify the Lovable JWT signature — we accept the postMessage
- *    bridge as trusted because the iframe is served from our domain and only
- *    trusted origins can postMessage to it.
- *  - The user's email is the stable identity key — same email = same user.
- *  - Rate-limited by the global /api limiter (100 req / 15 min per IP).
+ * Security:
+ *  - CORS limits callers to trusted origins (kumii.africa + lovable domains).
+ *  - The deterministic password is never sent to the browser — only the
+ *    resulting Supabase session tokens are returned.
+ *  - EXCHANGE_SECRET must be a random 32+ char string set in Vercel env vars.
+ *  - Rate-limited by the global /api limiter.
  */
 
+import { createHmac } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { supabase, supabaseAdmin } from '../supabase.js';
 
@@ -37,7 +37,6 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    // Base64url decode
     const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const json = Buffer.from(payload, 'base64').toString('utf-8');
     return JSON.parse(json);
@@ -46,15 +45,24 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Derive a deterministic password from the Lovable user ID + server secret.
+ * Same user always gets the same password — no storage needed.
+ */
+function derivePassword(lovableUserId: string): string {
+  const secret = process.env.EXCHANGE_SECRET ?? process.env.JWT_SECRET ?? 'changeme';
+  return createHmac('sha256', secret).update(lovableUserId).digest('hex');
+}
+
 // POST /api/auth/exchange
 router.post('/exchange', async (req: Request, res: Response) => {
-  const { access_token, refresh_token } = req.body ?? {};
+  const { access_token } = req.body ?? {};
 
   if (!access_token || typeof access_token !== 'string') {
     return res.status(400).json({ error: 'access_token is required' });
   }
 
-  // ── 1. Decode the Lovable JWT to get the user's email ─────────────────────
+  // ── 1. Decode the Lovable JWT ─────────────────────────────────────────────
   const payload = decodeJwtPayload(access_token);
   if (!payload) {
     return res.status(400).json({ error: 'Invalid access_token format' });
@@ -66,37 +74,37 @@ router.post('/exchange', async (req: Request, res: Response) => {
   if (!email) {
     return res.status(400).json({ error: 'access_token does not contain an email claim' });
   }
+  if (!lovableUserId) {
+    return res.status(400).json({ error: 'access_token does not contain a sub claim' });
+  }
+
+  const password = derivePassword(lovableUserId);
 
   try {
-    // ── 2. Look up or create the user in THIS Supabase project ───────────────
-    // listUsers with a filter does a server-side search by email — no full scan,
-    // works correctly at any user count.
-    const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ filter: `email.eq.${email}` } as Parameters<typeof supabaseAdmin.auth.admin.listUsers>[0]);
+    // ── 2. Look up existing user ──────────────────────────────────────────────
+    const { data: listData } = await supabaseAdmin.auth.admin.listUsers(
+      { filter: `email.eq.${email}` } as Parameters<typeof supabaseAdmin.auth.admin.listUsers>[0]
+    );
     const existingUser = listData?.users?.[0];
 
-    let userId: string | undefined;
-
     if (existingUser) {
-      userId = existingUser.id;
-      // Sync any updated metadata from Lovable (display name, avatar, etc.)
-      const meta = payload.user_metadata as Record<string, unknown> | undefined;
-      if (meta) {
-        await supabaseAdmin.auth.admin.updateUserById(userId, {
-          user_metadata: {
-            ...meta,
-            lovable_user_id: lovableUserId,
-            synced_from_lovable: true,
-          },
-        });
-      }
-    }
-
-    if (!userId) {
-      // ── 3. Create the user if they don't exist yet ─────────────────────────
+      // Ensure the deterministic password is set (idempotent update)
+      await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
+        password,
+        user_metadata: {
+          ...(existingUser.user_metadata ?? {}),
+          ...(payload.user_metadata as Record<string, unknown> ?? {}),
+          lovable_user_id: lovableUserId,
+          synced_from_lovable: true,
+        },
+      });
+    } else {
+      // ── 3. Create user if first visit ─────────────────────────────────────
       const meta = (payload.user_metadata as Record<string, unknown>) ?? {};
-      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      const { error: createError } = await supabaseAdmin.auth.admin.createUser({
         email,
-        email_confirm: true,   // mark email as confirmed — they authenticated via Lovable
+        password,
+        email_confirm: true,
         user_metadata: {
           ...meta,
           lovable_user_id: lovableUserId,
@@ -104,59 +112,32 @@ router.post('/exchange', async (req: Request, res: Response) => {
         },
       });
 
-      if (createError || !newUser.user) {
+      if (createError) {
         console.error('[auth/exchange] createUser error:', createError);
         return res.status(500).json({ error: 'Failed to provision user account' });
       }
-      userId = newUser.user.id;
     }
 
-    // ── 4. Generate a magic-link OTP for the user ────────────────────────────
-    // generateLink returns a link like:
-    //   https://<project>.supabase.co/auth/v1/verify?token=<token>&type=magiclink&redirect_to=...
-    // We extract the token and type, then call verifyOtp to exchange it for a session.
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink',
+    // ── 4. Sign in with the deterministic password to get a real session ──────
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email,
-      options: {
-        redirectTo: 'https://communities-ten.vercel.app',
-      },
+      password,
     });
 
-    if (linkError || !linkData) {
-      console.error('[auth/exchange] generateLink error:', linkError);
-      return res.status(500).json({ error: 'Failed to generate session link' });
+    if (signInError || !signInData.session) {
+      console.error('[auth/exchange] signInWithPassword error:', signInError);
+      return res.status(500).json({ error: 'Failed to create session' });
     }
 
-    // Extract the OTP token and email from the generated link properties
-    const { properties } = linkData;
-    const otpToken = properties?.hashed_token;
-    
-    if (!otpToken) {
-      console.error('[auth/exchange] No hashed_token in generateLink response', linkData);
-      return res.status(500).json({ error: 'Failed to extract OTP token' });
-    }
+    const { access_token: newAccessToken, refresh_token: newRefreshToken } = signInData.session;
 
-    // ── 5. Exchange the OTP for a real Supabase session ──────────────────────
-    // verifyOtp is a public operation — use the module-level anon client.
-    const { data: sessionData, error: sessionError } = await supabase.auth.verifyOtp({
-      email,
-      token: otpToken,
-      type: 'magiclink',
-    });
-
-    if (sessionError || !sessionData.session) {
-      console.error('[auth/exchange] verifyOtp error:', sessionError);
-      return res.status(500).json({ error: 'Failed to create session from OTP' });
-    }
-
-    const { access_token: newAccessToken, refresh_token: newRefreshToken } = sessionData.session;
+    console.log(`[auth/exchange] ✅ Session issued for ${email}`);
 
     return res.json({
       access_token: newAccessToken,
       refresh_token: newRefreshToken,
       user: {
-        id: userId,
+        id: signInData.session.user.id,
         email,
       },
     });
