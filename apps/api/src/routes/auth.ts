@@ -25,7 +25,7 @@
 
 import { createHmac } from 'crypto';
 import { Router, Request, Response } from 'express';
-import { supabase, supabaseAdmin } from '../supabase.js';
+import { supabaseAdmin } from '../supabase.js';
 
 const router = Router();
 
@@ -118,26 +118,47 @@ router.post('/exchange', async (req: Request, res: Response) => {
       }
     }
 
-    // ── 4. Sign in with the deterministic password to get a real session ──────
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    // ── 4. Sign in via Supabase REST token endpoint ───────────────────────────
+    // We call the token endpoint directly with the service_role key as apikey.
+    // This bypasses client-side email signup restrictions and works regardless
+    // of whether "Enable email provider" is toggled in Supabase dashboard.
+    const supabaseUrl = process.env.SUPABASE_URL!;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+    const tokenResp = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': serviceKey,
+        'Authorization': `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ email, password }),
     });
 
-    if (signInError || !signInData.session) {
-      console.error('[auth/exchange] signInWithPassword error:', signInError);
+    if (!tokenResp.ok) {
+      const errBody = await tokenResp.json().catch(() => ({}));
+      console.error('[auth/exchange] token endpoint error:', tokenResp.status, errBody);
       return res.status(500).json({ error: 'Failed to create session' });
     }
 
-    const { access_token: newAccessToken, refresh_token: newRefreshToken } = signInData.session;
+    const tokenData = await tokenResp.json() as {
+      access_token: string;
+      refresh_token: string;
+      user?: { id: string };
+    };
+
+    if (!tokenData.access_token) {
+      console.error('[auth/exchange] No access_token in token response', tokenData);
+      return res.status(500).json({ error: 'Failed to create session' });
+    }
 
     console.log(`[auth/exchange] ✅ Session issued for ${email}`);
 
     return res.json({
-      access_token: newAccessToken,
-      refresh_token: newRefreshToken,
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
       user: {
-        id: signInData.session.user.id,
+        id: tokenData.user?.id,
         email,
       },
     });
