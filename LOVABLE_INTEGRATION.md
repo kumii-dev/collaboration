@@ -46,13 +46,23 @@ Paste the following into Lovable:
 >   useEffect(() => {
 >     const handleMessage = async (event: MessageEvent) => {
 >       if (event.origin !== COLLAB_URL) return;
->       if (event.data?.type !== 'KUMII_READY') return;
 >
->       // Debounce: ignore duplicate pings within 500 ms, but always allow retries
->       const timeSinceLast = Date.now() - lastSentAtRef.current;
->       if (timeSinceLast < 500) return;
+>       // ── KUMII_READY: iframe is ready — send session ──────────────────────
+>       if (event.data?.type === 'KUMII_READY') {
+>         // Debounce: ignore duplicate pings within 500 ms, but always allow retries
+>         const timeSinceLast = Date.now() - lastSentAtRef.current;
+>         if (timeSinceLast < 500) return;
+>         await sendSession();
+>         return;
+>       }
 >
->       await sendSession();
+>       // ── KUMII_OPEN_URL: iframe wants to open an external link / file ─────
+>       // Browsers may block window.open() calls from inside an iframe.
+>       // The iframe forwards external URLs here so the parent can open them.
+>       if (event.data?.type === 'KUMII_OPEN_URL' && event.data?.url) {
+>         window.open(event.data.url, '_blank', 'noopener,noreferrer');
+>         return;
+>       }
 >     };
 >
 >     window.addEventListener('message', handleMessage);
@@ -130,7 +140,20 @@ posts KUMII_SESSION          →    calls supabase.auth.setSession()
                                   renders dashboard
 fetches profile + startup
 posts KUMII_PROFILE          →    stores in KumiiContext + localStorage ✅
+
+                                  user clicks external link / download
+receives KUMII_OPEN_URL      ←
+calls window.open(url)            opens in new tab ✅
 ```
+
+### postMessage type reference
+
+| Direction | Type | Sender | Purpose |
+|---|---|---|---|
+| iframe → parent | `KUMII_READY` | Collaboration app | Signals iframe is loaded; requests session |
+| parent → iframe | `KUMII_SESSION` | Lovable | Delivers `access_token` + `refresh_token` |
+| parent → iframe | `KUMII_PROFILE` | Lovable | Delivers user profile + startup data |
+| iframe → parent | `KUMII_OPEN_URL` | Collaboration app | Asks parent to open external URL / file download |
 
 ### KUMII_PROFILE payload shape
 
