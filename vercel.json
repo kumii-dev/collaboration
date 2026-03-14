@@ -4,31 +4,22 @@
   "outputDirectory": "apps/web/dist",
   "installCommand": "echo 'Dependencies installed in build.sh'",
   "framework": null,
-  "builds": [
-    {
-      "src": "api/index.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "apps/web/dist"
-      }
-    }
-  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "api/index.js"
+      "destination": "/api/index.js"
     },
     {
       "source": "/admin/audit-logs/(.*)",
-      "destination": "api/index.js"
+      "destination": "/api/index.js"
     },
     {
       "source": "/admin/audit-logs",
-      "destination": "api/index.js"
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [
