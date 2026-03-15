@@ -85,10 +85,13 @@ function App() {
       const { type, access_token, refresh_token, profile, startup } = event.data ?? {};
 
       // ── KUMII_SESSION: inject the Supabase session ────────────────────────
-      if (type === 'KUMII_SESSION' && access_token && refresh_token) {
+      if (type === 'KUMII_SESSION' && access_token) {
         // First try setSession directly — works when both apps share the same
-        // Supabase project.
-        const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
+        // Supabase project. refresh_token may be absent if Lovable sends only
+        // the access_token; exchange endpoint only needs access_token anyway.
+        const { data, error } = refresh_token
+          ? await supabase.auth.setSession({ access_token, refresh_token })
+          : { data: { session: null }, error: new Error('no refresh_token — falling back to exchange') };
 
         if (!error && data.session) {
           setSession(data.session);
