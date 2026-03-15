@@ -80,11 +80,18 @@ function App() {
     // arrived before React mounted are replayed immediately. This eliminates
     // the race where Lovable sends KUMII_SESSION before useEffect fires. ────
     const handleMessage = async (event: MessageEvent) => {
+      // Log EVERY message so we can see what's arriving (origin + type)
+      const msgType = event.data?.type ?? '(no type)';
+      console.log(`[Kumii] postMessage received — origin: "${event.origin}", type: "${msgType}"`);
+
       if (!isTrustedOrigin(event.origin)) return;
 
       const { type, access_token, refresh_token, profile, startup } = event.data ?? {};
 
       // ── KUMII_SESSION: inject the Supabase session ────────────────────────
+      if (type === 'KUMII_SESSION') {
+        console.log('[Kumii] KUMII_SESSION received — has access_token:', !!access_token, '| has refresh_token:', !!refresh_token);
+      }
       if (type === 'KUMII_SESSION' && access_token) {
         // First try setSession directly — works when both apps share the same
         // Supabase project. refresh_token may be absent if Lovable sends only
