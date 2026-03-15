@@ -47,12 +47,18 @@ const ALLOWED_ORIGINS = [
   config.CORS_ORIGIN,
   'https://kumii.africa',
   'https://www.kumii.africa',
+  // The iframe calls /api/auth/exchange from its own origin — must be allowed.
+  // In production this is communities-ten.vercel.app; allow all *.vercel.app
+  // preview deployments too.
+  'https://communities-ten.vercel.app',
 ].filter(Boolean);
 
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/[a-z0-9-]+\.lovable\.app$/,
   /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
   /^https:\/\/[a-z0-9-]+\.gptengineer\.app$/,
+  /^https:\/\/[a-z0-9-]+-[a-z0-9]+-[a-z0-9]+\.vercel\.app$/,   // preview deployments
+  /^https:\/\/communities-ten\.vercel\.app$/,                     // production
 ];
 
 app.use(cors({
