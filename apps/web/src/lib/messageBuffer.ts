@@ -24,7 +24,6 @@ window.addEventListener('message', (e: MessageEvent) => {
   if (liveHandler) {
     liveHandler(e);
   } else {
-    console.log('[messageBuffer] buffering message — type:', e.data?.type, 'origin:', e.origin);
     buffer.push(e);
   }
 });
