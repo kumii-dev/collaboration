@@ -162,8 +162,10 @@ router.post('/exchange', async (req: Request, res: Response) => {
       const profileUpsert: Record<string, unknown> = {
         id:    provisionedUserId,
         email: email,
-        // Default role — must match the user_role enum in Supabase ('user' | 'moderator' | 'admin')
-        role:  'user',
+        // Default role — must match the user_role enum in Supabase:
+        // ('entrepreneur', 'funder', 'advisor', 'moderator', 'admin')
+        // 'entrepreneur' is the default for new Lovable signups (see FIX_TRIGGER_ROLE.sql)
+        role:  'entrepreneur',
       };
       if (lovableMeta.full_name)  profileUpsert.full_name  = lovableMeta.full_name;
       if (lovableMeta.first_name) profileUpsert.full_name  = `${lovableMeta.first_name} ${lovableMeta.last_name ?? ''}`.trim();
