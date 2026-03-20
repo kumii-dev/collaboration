@@ -162,8 +162,8 @@ router.post('/exchange', async (req: Request, res: Response) => {
       const profileUpsert: Record<string, unknown> = {
         id:    provisionedUserId,
         email: email,
-        // Default role for all provisioned users
-        role:  'member',
+        // Default role — must match the user_role enum in Supabase ('user' | 'moderator' | 'admin')
+        role:  'user',
       };
       if (lovableMeta.full_name)  profileUpsert.full_name  = lovableMeta.full_name;
       if (lovableMeta.first_name) profileUpsert.full_name  = `${lovableMeta.first_name} ${lovableMeta.last_name ?? ''}`.trim();

@@ -29,6 +29,14 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
 
     const conversationIds: string[] = (participantRows ?? []).map((r: any) => r.conversation_id);
 
+    // ── Step 1b: get message IDs already read by this user (for unread count)
+    const { data: readRows } = await supabaseAdmin
+      .from('message_reads')
+      .select('message_id')
+      .eq('user_id', userId);
+
+    const readMessageIds: string[] = (readRows ?? []).map((r: any) => r.message_id);
+
     // ── Step 2: run remaining counts in parallel
     const [threadResult, postResult, repResult, unreadResult, reportResult] =
       await Promise.all([
@@ -51,16 +59,19 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
           .eq('id', userId)
           .single(),
 
-        // Unread messages: messages in user's conversations not yet in message_reads for this user
+        // Unread messages: in user's conversations, not sent by user, not yet read
         conversationIds.length > 0
-          ? supabaseAdmin
-              .from('messages')
-              .select('*', { count: 'exact', head: true })
-              .in('conversation_id', conversationIds)
-              .neq('sender_id', userId)
-              .not('id', 'in',
-                `(select message_id from message_reads where user_id = '${userId}')`
-              )
+          ? (() => {
+              let q = supabaseAdmin
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .in('conversation_id', conversationIds)
+                .neq('sender_id', userId);
+              if (readMessageIds.length > 0) {
+                q = q.not('id', 'in', `(${readMessageIds.map(id => `"${id}"`).join(',')})`) as any;
+              }
+              return q;
+            })()
           : Promise.resolve({ count: 0, error: null }),
 
         // Pending moderation reports
