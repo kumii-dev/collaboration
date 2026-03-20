@@ -95,26 +95,38 @@ router.post('/exchange', async (req: Request, res: Response) => {
     const searchData = await searchResp.json() as { users?: Array<{ id: string; user_metadata?: Record<string, unknown>; encrypted_password?: string }> };
     const existingUser = searchData.users?.[0];
 
+    // Determine the role this user should have in this project.
+    // Lovable sends persona_type in user_metadata; map 'admin' → 'admin',
+    // everything else keeps the default 'entrepreneur'.
+    const lovableMeta = (payload.user_metadata as Record<string, unknown>) ?? {};
+    const lovablePersona = (lovableMeta.persona_type as string | undefined) ?? '';
+    const LOVABLE_ADMIN_PERSONAS = ['admin', 'moderator'];
+    const mappedRole: string = LOVABLE_ADMIN_PERSONAS.includes(lovablePersona.toLowerCase())
+      ? lovablePersona.toLowerCase()   // 'admin' or 'moderator'
+      : 'entrepreneur';                // safe default
+
+    let provisionedUserId: string | undefined;
+
     if (existingUser) {
+      provisionedUserId = existingUser.id;
       // Ensure the deterministic password is set (idempotent update)
       await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
         password,
         user_metadata: {
           ...(existingUser.user_metadata ?? {}),
-          ...(payload.user_metadata as Record<string, unknown> ?? {}),
+          ...lovableMeta,
           lovable_user_id: lovableUserId,
           synced_from_lovable: true,
         },
       });
     } else {
       // ── 3. Create user if first visit ─────────────────────────────────────
-      const meta = (payload.user_metadata as Record<string, unknown>) ?? {};
-      const { error: createError } = await supabaseAdmin.auth.admin.createUser({
+      const { data: createdUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
         user_metadata: {
-          ...meta,
+          ...lovableMeta,
           lovable_user_id: lovableUserId,
           synced_from_lovable: true,
         },
@@ -124,6 +136,18 @@ router.post('/exchange', async (req: Request, res: Response) => {
         console.error('[auth/exchange] createUser error:', createError);
         return res.status(500).json({ error: 'Failed to provision user account' });
       }
+      provisionedUserId = createdUser.user?.id;
+    }
+
+    // ── 3b. Sync role to profiles table ──────────────────────────────────────
+    // The handle_new_user() trigger creates the profile with role='entrepreneur'.
+    // If the Lovable user is an admin or moderator, promote them here.
+    if (provisionedUserId && mappedRole !== 'entrepreneur') {
+      await supabaseAdmin
+        .from('profiles')
+        .update({ role: mappedRole })
+        .eq('id', provisionedUserId);
+      console.log(`[auth/exchange] Role synced → ${mappedRole} for ${email}`);
     }
 
     // ── 4. Sign in via Supabase REST token endpoint ───────────────────────────

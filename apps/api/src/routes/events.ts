@@ -148,10 +148,17 @@ router.get('/:id', authenticate, validateParams(idSchema), async (req: AuthReque
 
 /**
  * POST /api/events
+ * Only admins and moderators may create events.
  */
 router.post('/', authenticate, validateBody(createEventSchema), async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.id;
+    const role   = req.user!.role;
+
+    if (role !== 'admin' && role !== 'moderator') {
+      return res.status(403).json({ success: false, error: 'Only admins and moderators can create events' });
+    }
+
     const payload = { ...req.body, created_by: userId };
 
     const { data, error } = await supabaseAdmin
