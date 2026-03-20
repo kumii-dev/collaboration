@@ -1,0 +1,179 @@
+/**
+ * Dashboard routes
+ *
+ * GET /api/dashboard/stats    — per-user counts (conversations, threads, posts, reputation, unread)
+ * GET /api/dashboard/activity — recent activity feed for the authenticated user
+ */
+
+import { Router } from 'express';
+import { supabaseAdmin } from '../supabase.js';
+import { authenticate, AuthRequest } from '../middleware/auth.js';
+import logger from '../logger.js';
+
+const router = Router();
+
+// ── GET /api/dashboard/stats ─────────────────────────────────────────────────
+router.get('/stats', authenticate, async (req: AuthRequest, res) => {
+  const userId = req.user!.id;
+
+  try {
+    // Run counts in parallel
+    const [convResult, threadResult, postResult, repResult, unreadResult, reportResult] =
+      await Promise.all([
+        // Total conversations this user participates in
+        supabaseAdmin
+          .from('conversation_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId),
+
+        // Forum threads created by user
+        supabaseAdmin
+          .from('threads')
+          .select('*', { count: 'exact', head: true })
+          .eq('author_id', userId),
+
+        // Forum posts (replies) by user
+        supabaseAdmin
+          .from('posts')
+          .select('*', { count: 'exact', head: true })
+          .eq('author_id', userId),
+
+        // Reputation score from profiles
+        supabaseAdmin
+          .from('profiles')
+          .select('reputation_score')
+          .eq('id', userId)
+          .single(),
+
+        // Unread messages across all conversations
+        supabaseAdmin
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_read', false)
+          .neq('sender_id', userId)
+          .in(
+            'conversation_id',
+            supabaseAdmin
+              .from('conversation_participants')
+              .select('conversation_id')
+              .eq('user_id', userId) as any
+          ),
+
+        // Pending moderation reports (only if user is admin/moderator)
+        supabaseAdmin
+          .from('reports')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending'),
+      ]);
+
+    const role = req.user!.role;
+    const isAdmin = role === 'admin' || role === 'moderator';
+
+    return res.json({
+      success: true,
+      data: {
+        total_conversations: convResult.count ?? 0,
+        total_threads:       threadResult.count ?? 0,
+        total_posts:         postResult.count ?? 0,
+        reputation_score:    (repResult.data as any)?.reputation_score ?? 0,
+        unread_messages:     unreadResult.count ?? 0,
+        pending_reports:     isAdmin ? (reportResult.count ?? 0) : undefined,
+      },
+    });
+  } catch (err) {
+    logger.error('dashboard/stats error', { err });
+    return res.status(500).json({ success: false, error: 'Failed to fetch dashboard stats' });
+  }
+});
+
+// ── GET /api/dashboard/activity ──────────────────────────────────────────────
+router.get('/activity', authenticate, async (req: AuthRequest, res) => {
+  const userId = req.user!.id;
+  const limit  = Math.min(Number(req.query.limit) || 10, 50);
+
+  try {
+    // Gather recent actions across three event types in parallel
+    const [messagesRes, threadsRes, postsRes] = await Promise.all([
+      // Recent chat messages sent by this user
+      supabaseAdmin
+        .from('messages')
+        .select('id, content, created_at, conversation_id')
+        .eq('sender_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit),
+
+      // Recent forum threads created by user
+      supabaseAdmin
+        .from('threads')
+        .select('id, title, created_at, board_id')
+        .eq('author_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit),
+
+      // Recent forum posts (replies) by user
+      supabaseAdmin
+        .from('posts')
+        .select('id, content, created_at, thread_id')
+        .eq('author_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit),
+    ]);
+
+    type ActivityItem = {
+      id: string;
+      type: 'message' | 'thread' | 'post';
+      title: string;
+      description: string;
+      link: string;
+      created_at: string;
+    };
+
+    const items: ActivityItem[] = [];
+
+    for (const msg of (messagesRes.data ?? [])) {
+      items.push({
+        id:          `msg-${msg.id}`,
+        type:        'message',
+        title:       'Sent a message',
+        description: (msg.content as string)?.slice(0, 80) ?? '',
+        link:        `/chat/${msg.conversation_id}`,
+        created_at:  msg.created_at,
+      });
+    }
+
+    for (const thread of (threadsRes.data ?? [])) {
+      items.push({
+        id:          `thread-${thread.id}`,
+        type:        'thread',
+        title:       thread.title as string,
+        description: 'Created a discussion thread',
+        link:        `/forum/threads/${thread.id}`,
+        created_at:  thread.created_at,
+      });
+    }
+
+    for (const post of (postsRes.data ?? [])) {
+      items.push({
+        id:          `post-${post.id}`,
+        type:        'post',
+        title:       'Replied to a thread',
+        description: (post.content as string)?.slice(0, 80) ?? '',
+        link:        `/forum/threads/${post.thread_id}`,
+        created_at:  post.created_at,
+      });
+    }
+
+    // Sort all items by date descending and take the top N
+    items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return res.json({
+      success: true,
+      data: items.slice(0, limit),
+    });
+  } catch (err) {
+    logger.error('dashboard/activity error', { err });
+    return res.status(500).json({ success: false, error: 'Failed to fetch dashboard activity' });
+  }
+});
+
+export default router;

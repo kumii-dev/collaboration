@@ -9,6 +9,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 // Import routes
 import authRoutes from './routes/auth.js';
 import chatRoutes from './routes/chat.js';
+import dashboardRoutes from './routes/dashboard.js';
 import forumRoutes from './routes/forum.js';
 import moderationRoutes from './routes/moderation.js';
 import notificationsRoutes from './routes/notifications.js';
@@ -136,6 +137,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/forum', forumRoutes);
 app.use('/api/moderation', moderationRoutes);
 app.use('/api/notifications', notificationsRoutes);
