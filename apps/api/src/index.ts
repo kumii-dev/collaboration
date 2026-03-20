@@ -17,6 +17,10 @@ import eventsRoutes from './routes/events.js';
 
 const app = express();
 
+// Vercel (and most reverse proxies) set X-Forwarded-For.
+// Without this, express-rate-limit throws a ValidationError.
+app.set('trust proxy', 1);
+
 // =====================================================
 // MIDDLEWARE
 // =====================================================

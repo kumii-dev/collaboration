@@ -8,7 +8,6 @@ import { format } from 'date-fns';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../lib/api';
 import { supabase } from '../../lib/supabase';
-import { useKumii } from '../../lib/KumiiContext';
 import UpcomingEventsSection from '../../components/events/UpcomingEventsSection';
 import CommunityChatPanel from '../../components/community/CommunityChatPanel';
 
@@ -55,15 +54,10 @@ export default function CategoryDetailPage() {
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'discussions' | 'chat' | 'events'>('discussions');
 
-  // Lovable context — persona_type:'admin' users are admins even before the
-  // profiles table role is synced (e.g. first visit within the same page load).
-  const { profile: kumiiProfile } = useKumii();
-  const ADMIN_PERSONAS = ['admin', 'moderator'];
-  const isAdminFromLovable = ADMIN_PERSONAS.includes(
-    (kumiiProfile?.persona_type ?? '').toLowerCase()
-  );
-
-  // Fetch current user's role to decide whether to show Create Event button
+  // Fetch current user's role from this project's profiles table.
+  // Admin/moderator status is managed here directly — not sourced from Lovable JWT
+  // (the Lovable JWT contains no role field). To promote a user to admin, update
+  // their role in the profiles table via Supabase dashboard or SQL.
   const { data: currentUserProfile } = useQuery(
     'current-user-profile',
     async () => {
@@ -74,13 +68,9 @@ export default function CategoryDetailPage() {
     },
     { staleTime: 300_000, retry: 1 }
   );
-  // isAdmin is true if the profiles table says so OR if Lovable context says so.
-  // The profiles table role is synced by auth/exchange on login, but checking
-  // the Lovable context catches the case where the user's role was just promoted.
   const isAdmin =
     currentUserProfile?.role === 'admin' ||
-    currentUserProfile?.role === 'moderator' ||
-    isAdminFromLovable;
+    currentUserProfile?.role === 'moderator';
 
   // Fetch all categories to find the one with matching slug
   const { data: categories, isLoading: loadingCategories, error: categoriesError } = useQuery(

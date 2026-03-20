@@ -71,13 +71,6 @@ router.post('/exchange', async (req: Request, res: Response) => {
   const email = payload.email as string | undefined;
   const lovableUserId = payload.sub as string | undefined;
 
-  // Log full payload so we can see exactly what Lovable sends (redact email domain only)
-  console.log('[auth/exchange] JWT payload keys:', Object.keys(payload));
-  console.log('[auth/exchange] JWT payload:', JSON.stringify({
-    ...payload,
-    email: email ? `${email.split('@')[0]}@…` : undefined,  // partial redact
-  }, null, 2));
-
   if (!email) {
     return res.status(400).json({ error: 'access_token does not contain an email claim' });
   }
@@ -89,34 +82,29 @@ router.post('/exchange', async (req: Request, res: Response) => {
 
   try {
     // ── 2. Look up existing user ──────────────────────────────────────────────
-    // Note: supabaseAdmin.auth.admin.listUsers() `filter` option is not reliably
-    // supported by all versions of the JS client, so we use the admin REST API
-    // directly to search by email.
+    // The Supabase admin REST API ?email= param is a substring search, not exact.
+    // We fetch results and find the exact match client-side.
+    // ?filter=email.eq.<email> is broken (@ encoding issues).
     const supabaseUrl = process.env.SUPABASE_URL!;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-    const searchResp = await fetch(
-      `${supabaseUrl}/auth/v1/admin/users?filter=${encodeURIComponent(`email.eq.${email}`)}`,
+    const byEmailResp = await fetch(
+      `${supabaseUrl}/auth/v1/admin/users?email=${encodeURIComponent(email)}&per_page=50`,
       { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
     );
-    const searchData = await searchResp.json() as { users?: Array<{ id: string; user_metadata?: Record<string, unknown>; encrypted_password?: string }> };
-    const existingUser = searchData.users?.[0];
+    const byEmailData = await byEmailResp.json() as { users?: Array<{ id: string; user_metadata?: Record<string, unknown> }> };
+    // Exact match — ?email= is substring so filter client-side
+    const existingUser = byEmailData.users?.find(u => (u as any).email === email);
 
-    // Determine the role this user should have in this project.
-    // Lovable sends persona_type in user_metadata; map 'admin' → 'admin',
-    // everything else keeps the default 'entrepreneur'.
+    // Merge Lovable metadata (names, avatar, etc.) — no role field exists in the JWT.
+    // Role is managed exclusively in this project's profiles table.
     const lovableMeta = (payload.user_metadata as Record<string, unknown>) ?? {};
-    const lovablePersona = (lovableMeta.persona_type as string | undefined) ?? '';
-    const LOVABLE_ADMIN_PERSONAS = ['admin', 'moderator'];
-    const mappedRole: string = LOVABLE_ADMIN_PERSONAS.includes(lovablePersona.toLowerCase())
-      ? lovablePersona.toLowerCase()   // 'admin' or 'moderator'
-      : 'entrepreneur';                // safe default
 
     let provisionedUserId: string | undefined;
 
     if (existingUser) {
       provisionedUserId = existingUser.id;
-      // Ensure the deterministic password is set (idempotent update)
+      // Sync password + Lovable profile metadata (idempotent)
       await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
         password,
         user_metadata: {
@@ -146,15 +134,19 @@ router.post('/exchange', async (req: Request, res: Response) => {
       provisionedUserId = createdUser.user?.id;
     }
 
-    // ── 3b. Sync role to profiles table ──────────────────────────────────────
-    // The handle_new_user() trigger creates the profile with role='entrepreneur'.
-    // If the Lovable user is an admin or moderator, promote them here.
-    if (provisionedUserId && mappedRole !== 'entrepreneur') {
-      await supabaseAdmin
-        .from('profiles')
-        .update({ role: mappedRole })
-        .eq('id', provisionedUserId);
-      console.log(`[auth/exchange] Role synced → ${mappedRole} for ${email}`);
+    // ── 3b. Sync Lovable profile fields (name, avatar) to profiles table ─────
+    // Role is NOT synced from Lovable — admins are promoted directly in
+    // this project's profiles table (Supabase dashboard or admin SQL).
+    if (provisionedUserId) {
+      const profileUpdate: Record<string, unknown> = {};
+      if (lovableMeta.full_name)   profileUpdate.full_name  = lovableMeta.full_name;
+      if (lovableMeta.first_name)  profileUpdate.full_name  = `${lovableMeta.first_name} ${lovableMeta.last_name ?? ''}`.trim();
+      if (lovableMeta.avatar_url)  profileUpdate.avatar_url = lovableMeta.avatar_url;
+      if (lovableMeta.picture)     profileUpdate.avatar_url = lovableMeta.picture;
+
+      if (Object.keys(profileUpdate).length > 0) {
+        await supabaseAdmin.from('profiles').update(profileUpdate).eq('id', provisionedUserId);
+      }
     }
 
     // ── 4. Sign in via Supabase REST token endpoint ───────────────────────────
