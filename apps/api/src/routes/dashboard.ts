@@ -17,15 +17,21 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
   const userId = req.user!.id;
 
   try {
-    // Run counts in parallel
-    const [convResult, threadResult, postResult, repResult, unreadResult, reportResult] =
-      await Promise.all([
-        // Total conversations this user participates in
-        supabaseAdmin
-          .from('conversation_participants')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', userId),
+    // ── Step 1: get this user's conversation IDs first (needed for unread count).
+    // Supabase JS client does not support passing a query builder into .in() —
+    // we must resolve the IDs explicitly before using them as a filter.
+    const { data: participantRows, error: partErr } = await supabaseAdmin
+      .from('conversation_participants')
+      .select('conversation_id')
+      .eq('user_id', userId);
 
+    if (partErr) logger.warn('dashboard/stats: conversation_participants error', { partErr });
+
+    const conversationIds: string[] = (participantRows ?? []).map((r: any) => r.conversation_id);
+
+    // ── Step 2: run remaining counts in parallel
+    const [threadResult, postResult, repResult, unreadResult, reportResult] =
+      await Promise.all([
         // Forum threads created by user
         supabaseAdmin
           .from('threads')
@@ -45,43 +51,46 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
           .eq('id', userId)
           .single(),
 
-        // Unread messages across all conversations
-        supabaseAdmin
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('is_read', false)
-          .neq('sender_id', userId)
-          .in(
-            'conversation_id',
-            supabaseAdmin
-              .from('conversation_participants')
-              .select('conversation_id')
-              .eq('user_id', userId) as any
-          ),
+        // Unread messages across conversations this user is in
+        conversationIds.length > 0
+          ? supabaseAdmin
+              .from('messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('is_read', false)
+              .neq('sender_id', userId)
+              .in('conversation_id', conversationIds)
+          : Promise.resolve({ count: 0, error: null }),
 
-        // Pending moderation reports (only if user is admin/moderator)
+        // Pending moderation reports
         supabaseAdmin
           .from('reports')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'pending'),
       ]);
 
-    const role = req.user!.role;
+    // Log any Supabase errors so they appear in Vercel logs
+    if (threadResult.error) logger.warn('dashboard/stats: threads error', { e: threadResult.error });
+    if (postResult.error)   logger.warn('dashboard/stats: posts error',   { e: postResult.error });
+    if (repResult.error)    logger.warn('dashboard/stats: profiles error', { e: repResult.error });
+    if (unreadResult.error) logger.warn('dashboard/stats: messages error', { e: unreadResult.error });
+    if (reportResult.error) logger.warn('dashboard/stats: reports error',  { e: reportResult.error });
+
+    const role    = req.user!.role;
     const isAdmin = role === 'admin' || role === 'moderator';
 
     return res.json({
       success: true,
       data: {
-        total_conversations: convResult.count ?? 0,
+        total_conversations: conversationIds.length,
         total_threads:       threadResult.count ?? 0,
-        total_posts:         postResult.count ?? 0,
+        total_posts:         postResult.count   ?? 0,
         reputation_score:    (repResult.data as any)?.reputation_score ?? 0,
-        unread_messages:     unreadResult.count ?? 0,
+        unread_messages:     unreadResult.count  ?? 0,
         pending_reports:     isAdmin ? (reportResult.count ?? 0) : undefined,
       },
     });
   } catch (err) {
-    logger.error('dashboard/stats error', { err });
+    logger.error('dashboard/stats error', { message: err instanceof Error ? err.message : String(err) });
     return res.status(500).json({ success: false, error: 'Failed to fetch dashboard stats' });
   }
 });
