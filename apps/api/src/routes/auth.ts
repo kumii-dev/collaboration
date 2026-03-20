@@ -71,6 +71,13 @@ router.post('/exchange', async (req: Request, res: Response) => {
   const email = payload.email as string | undefined;
   const lovableUserId = payload.sub as string | undefined;
 
+  // Log full payload so we can see exactly what Lovable sends (redact email domain only)
+  console.log('[auth/exchange] JWT payload keys:', Object.keys(payload));
+  console.log('[auth/exchange] JWT payload:', JSON.stringify({
+    ...payload,
+    email: email ? `${email.split('@')[0]}@…` : undefined,  // partial redact
+  }, null, 2));
+
   if (!email) {
     return res.status(400).json({ error: 'access_token does not contain an email claim' });
   }
