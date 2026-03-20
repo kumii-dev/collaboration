@@ -154,18 +154,33 @@ router.post('/exchange', async (req: Request, res: Response) => {
       provisionedUserId = createdUser.user?.id;
     }
 
-    // ── 3b. Sync Lovable profile fields (name, avatar) to profiles table ─────
-    // Role is NOT synced from Lovable — admins are promoted directly in
-    // this project's profiles table (Supabase dashboard or admin SQL).
+    // ── 3b. Upsert profile row (name, avatar) in this project's profiles table ──
+    // We always upsert — creates the row for new users, updates it for returning
+    // users. Role is intentionally NOT set here — admins are promoted directly
+    // in the profiles table via Supabase dashboard or SQL.
     if (provisionedUserId) {
-      const profileUpdate: Record<string, unknown> = {};
-      if (lovableMeta.full_name)   profileUpdate.full_name  = lovableMeta.full_name;
-      if (lovableMeta.first_name)  profileUpdate.full_name  = `${lovableMeta.first_name} ${lovableMeta.last_name ?? ''}`.trim();
-      if (lovableMeta.avatar_url)  profileUpdate.avatar_url = lovableMeta.avatar_url;
-      if (lovableMeta.picture)     profileUpdate.avatar_url = lovableMeta.picture;
+      const profileUpsert: Record<string, unknown> = {
+        id:    provisionedUserId,
+        email: email,
+        // Default role for all provisioned users
+        role:  'member',
+      };
+      if (lovableMeta.full_name)  profileUpsert.full_name  = lovableMeta.full_name;
+      if (lovableMeta.first_name) profileUpsert.full_name  = `${lovableMeta.first_name} ${lovableMeta.last_name ?? ''}`.trim();
+      if (lovableMeta.avatar_url) profileUpsert.avatar_url = lovableMeta.avatar_url;
+      if (lovableMeta.picture)    profileUpsert.avatar_url = lovableMeta.picture;
 
-      if (Object.keys(profileUpdate).length > 0) {
-        await supabaseAdmin.from('profiles').update(profileUpdate).eq('id', provisionedUserId);
+      const { error: upsertErr } = await supabaseAdmin
+        .from('profiles')
+        .upsert(profileUpsert, {
+          onConflict: 'id',
+          // Never downgrade an existing admin/moderator role back to 'member'
+          ignoreDuplicates: false,
+        });
+
+      if (upsertErr) {
+        // Non-fatal — log but don't fail the token exchange
+        console.error('[auth/exchange] profile upsert error:', upsertErr.message);
       }
     }
 

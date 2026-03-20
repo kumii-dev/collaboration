@@ -51,14 +51,16 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
           .eq('id', userId)
           .single(),
 
-        // Unread messages across conversations this user is in
+        // Unread messages: messages in user's conversations not yet in message_reads for this user
         conversationIds.length > 0
           ? supabaseAdmin
               .from('messages')
               .select('*', { count: 'exact', head: true })
-              .eq('is_read', false)
-              .neq('sender_id', userId)
               .in('conversation_id', conversationIds)
+              .neq('sender_id', userId)
+              .not('id', 'in',
+                `(select message_id from message_reads where user_id = '${userId}')`
+              )
           : Promise.resolve({ count: 0, error: null }),
 
         // Pending moderation reports
