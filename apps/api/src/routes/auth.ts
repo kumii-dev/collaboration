@@ -71,6 +71,26 @@ router.post('/exchange', async (req: Request, res: Response) => {
   const email = payload.email as string | undefined;
   const lovableUserId = payload.sub as string | undefined;
 
+  // ── TEMPORARY: log Lovable JWT structure so we can inspect what fields are
+  // available (e.g. role, persona_type, custom_claims, etc.)
+  // Remove once confirmed — see GitHub issue #investigate-lovable-payload
+  console.log('[auth/exchange] JWT top-level keys:', Object.keys(payload));
+  console.log('[auth/exchange] JWT user_metadata:', JSON.stringify(
+    payload.user_metadata ?? {},
+    (key, value) => {
+      // Partially redact email values for privacy
+      if (typeof value === 'string' && value.includes('@')) {
+        const [local, domain] = value.split('@');
+        return `${local.slice(0, 3)}***@${domain}`;
+      }
+      return value;
+    },
+    2
+  ));
+  if ((payload as any).app_metadata) {
+    console.log('[auth/exchange] JWT app_metadata:', JSON.stringify(payload.app_metadata, null, 2));
+  }
+
   if (!email) {
     return res.status(400).json({ error: 'access_token does not contain an email claim' });
   }
