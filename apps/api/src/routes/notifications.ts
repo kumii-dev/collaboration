@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { supabaseAdmin } from '../supabase.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { validateQuery } from '../middleware/validation.js';
 import logger from '../logger.js';
 
 const router = Router();
@@ -31,17 +33,39 @@ router.get('/unread-count', authenticate, async (req: AuthRequest, res) => {
 
 /**
  * GET /api/notifications
- * Get user's notifications
+ * Get user's notifications. Optional query params:
+ *   ?type=mention|reply|message|moderation|system  — filter by type
+ *   ?unread=true                                    — only unread
+ *   ?limit=50&offset=0                              — pagination
  */
-router.get('/', authenticate, async (req: AuthRequest, res) => {
+router.get(
+  '/',
+  authenticate,
+  validateQuery(z.object({
+    type:   z.enum(['mention', 'reply', 'message', 'moderation', 'system']).optional(),
+    unread: z.enum(['true', 'false']).optional(),
+    limit:  z.string().optional().transform(v => Math.min(Number(v) || 50, 100)),
+    offset: z.string().optional().transform(v => Number(v) || 0),
+  })),
+  async (req: AuthRequest, res) => {
   try {
-    const { data, error } = await supabaseAdmin
+    const type   = req.query.type   as string | undefined;
+    const unread = req.query.unread as string | undefined;
+    const limit  = Math.min(Number(req.query.limit)  || 50, 100);
+    const offset = Number(req.query.offset) || 0;
+
+    let query = supabaseAdmin
       .from('notifications')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('user_id', req.user!.id)
       .eq('archived', false)
       .order('created_at', { ascending: false })
-      .limit(50);
+      .range(offset, offset + limit - 1);
+
+    if (type)             query = query.eq('type', type);
+    if (unread === 'true') query = query.eq('read', false);
+
+    const { data, error, count } = await query;
 
     if (error) {
       logger.error('Failed to fetch notifications', { error });
@@ -53,7 +77,7 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
 
     res.json({
       success: true,
-      data: { notifications: data },
+      data: { notifications: data ?? [], total: count ?? 0, limit, offset },
     });
   } catch (error) {
     logger.error('Get notifications error', { error });

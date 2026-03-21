@@ -1,10 +1,13 @@
 /**
  * Admin routes — restricted to role = 'admin'
  *
- * GET  /api/admin/users                 — paginated user list with optional role filter
- * PATCH /api/admin/users/:id/role       — change a user's role (with audit log)
- * GET  /api/admin/audit-logs            — paginated audit log with optional filters
- * GET  /api/admin/stats                 — platform-wide aggregate stats
+ * GET    /api/admin/users                  — paginated user list with optional role/search filter
+ * GET    /api/admin/users/:id              — full user detail with moderation history
+ * PATCH  /api/admin/users/:id/role         — change a user's role (with audit log)
+ * PATCH  /api/admin/users/:id/suspend      — suspend or ban a user
+ * DELETE /api/admin/users/:id/suspend      — lift an active suspension/ban
+ * GET    /api/admin/audit-logs             — paginated audit log with optional filters
+ * GET    /api/admin/stats                  — platform-wide aggregate stats
  */
 
 import { Router } from 'express';
@@ -212,6 +215,165 @@ router.patch(
       res.json({ success: true, data: updated });
     } catch (err: any) {
       logger.error('PATCH /admin/users/:id/role', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+/**
+ * PATCH /api/admin/users/:id/suspend
+ * Suspend or ban a user. Body: { action_type: 'suspend'|'ban', reason, duration_days? }
+ * duration_days omitted = permanent (for ban) or 7-day default (for suspend).
+ */
+router.patch(
+  '/users/:id/suspend',
+  validateParams(userIdParamSchema),
+  validateBody(z.object({
+    action_type:   z.enum(['suspend', 'ban']),
+    reason:        z.string().min(3).max(500),
+    duration_days: z.number().int().positive().optional(),
+  })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id }          = req.params;
+      const adminId         = req.user!.id;
+      const { action_type, reason, duration_days } = req.body as {
+        action_type: 'suspend' | 'ban';
+        reason: string;
+        duration_days?: number;
+      };
+
+      if (id === adminId) {
+        return res.status(400).json({ success: false, error: 'You cannot suspend yourself' });
+      }
+
+      // Verify target user exists
+      const { data: target, error: fetchErr } = await supabaseAdmin
+        .from('profiles')
+        .select('id, email, full_name, role')
+        .eq('id', id)
+        .single();
+
+      if (fetchErr || !target) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+
+      // Admins cannot be suspended
+      if ((target as any).role === 'admin') {
+        return res.status(403).json({ success: false, error: 'Admins cannot be suspended' });
+      }
+
+      const days       = duration_days ?? (action_type === 'ban' ? null : 7);
+      const expires_at = days ? new Date(Date.now() + days * 86_400_000).toISOString() : null;
+
+      const { data: action, error: insertErr } = await supabaseAdmin
+        .from('moderation_actions')
+        .insert({
+          moderator_id:   adminId,
+          target_user_id: id,
+          action_type,
+          reason,
+          duration_days:  days,
+          expires_at,
+          metadata:       { source: 'admin_panel', target_email: (target as any).email },
+        })
+        .select('id, action_type, reason, expires_at, created_at')
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      // Audit log + notification to target (fire-and-forget)
+      setImmediate(async () => {
+        try {
+          await supabaseAdmin.rpc('create_audit_log', {
+            p_user_id:       adminId,
+            p_event_type:    'moderation_action',
+            p_resource_type: 'profiles',
+            p_resource_id:   id,
+            p_details:       { action: action_type, reason, expires_at, target_email: (target as any).email },
+          });
+
+          await supabaseAdmin.from('notifications').insert({
+            user_id: id,
+            type:    'moderation',
+            title:   action_type === 'ban' ? 'Your account has been banned' : 'Your account has been suspended',
+            content: `Reason: ${reason}${expires_at ? `. Active until ${new Date(expires_at).toLocaleDateString()}.` : ' (permanent).'}`,
+            link:    '/support',
+          });
+        } catch { /* non-fatal */ }
+      });
+
+      res.json({ success: true, data: action });
+    } catch (err: any) {
+      logger.error('PATCH /admin/users/:id/suspend', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+/**
+ * DELETE /api/admin/users/:id/suspend
+ * Lift an active suspension or ban by expiring it immediately.
+ * Creates a 'restore' moderation action.
+ */
+router.delete(
+  '/users/:id/suspend',
+  validateParams(userIdParamSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id }    = req.params;
+      const adminId   = req.user!.id;
+      const now       = new Date().toISOString();
+
+      // Expire all active suspensions/bans for this user
+      const { error: expireErr } = await supabaseAdmin
+        .from('moderation_actions')
+        .update({ expires_at: now })
+        .eq('target_user_id', id)
+        .in('action_type', ['suspend', 'ban'])
+        .or(`expires_at.is.null,expires_at.gt.${now}`);
+
+      if (expireErr) throw expireErr;
+
+      // Record the restore action
+      const { data: restore, error: restoreErr } = await supabaseAdmin
+        .from('moderation_actions')
+        .insert({
+          moderator_id:   adminId,
+          target_user_id: id,
+          action_type:    'restore',
+          reason:         'Suspension lifted by admin',
+          metadata:       { source: 'admin_panel' },
+        })
+        .select('id, action_type, created_at')
+        .single();
+
+      if (restoreErr) throw restoreErr;
+
+      // Audit + notify (fire-and-forget)
+      setImmediate(async () => {
+        try {
+          await supabaseAdmin.rpc('create_audit_log', {
+            p_user_id:       adminId,
+            p_event_type:    'moderation_action',
+            p_resource_type: 'profiles',
+            p_resource_id:   id,
+            p_details:       { action: 'restore' },
+          });
+
+          await supabaseAdmin.from('notifications').insert({
+            user_id: id,
+            type:    'moderation',
+            title:   'Your account restriction has been lifted',
+            content: 'Your account is now in good standing. Welcome back.',
+            link:    '/',
+          });
+        } catch { /* non-fatal */ }
+      });
+
+      res.json({ success: true, data: restore });
+    } catch (err: any) {
+      logger.error('DELETE /admin/users/:id/suspend', err);
       res.status(500).json({ success: false, error: err.message });
     }
   }

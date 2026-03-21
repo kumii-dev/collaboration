@@ -114,6 +114,33 @@ router.patch(
 );
 
 /**
+ * PATCH /api/users/me/presence
+ * Heartbeat endpoint — updates last_seen_at for the calling user.
+ * Call from the frontend every ~60 s while the tab is visible.
+ * Returns the updated timestamp so the client can confirm the write.
+ */
+router.patch('/me/presence', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const now = new Date().toISOString();
+
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({ last_seen_at: now })
+      .eq('id', req.user!.id);
+
+    if (error) {
+      logger.warn('Presence update failed', { error });
+      return res.status(500).json({ success: false, error: 'Failed to update presence' });
+    }
+
+    res.json({ success: true, data: { last_seen_at: now } });
+  } catch (error) {
+    logger.error('Presence error', { error });
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
  * GET /api/users/search
  * Search for users by name or email. Excludes users the caller has blocked
  * and users who have blocked the caller.

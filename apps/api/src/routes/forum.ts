@@ -689,6 +689,66 @@ router.post(
 // views_count and returns the full thread shape including reply/vote counts.
 
 /**
+ * GET /api/forum/posts/:id
+ * Fetch a single post by ID, including author, vote score, and solution status.
+ */
+router.get(
+  '/posts/:id',
+  authenticate,
+  validateParams(z.object({ id: z.string().uuid() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      const { data: post, error } = await supabaseAdmin
+        .from('forum_posts')
+        .select(`
+          id,
+          thread_id,
+          content,
+          parent_post_id,
+          edited,
+          edited_at,
+          is_solution,
+          created_at,
+          author:author_id (
+            id,
+            full_name,
+            avatar_url,
+            role,
+            verified,
+            reputation_score
+          )
+        `)
+        .eq('id', id)
+        .eq('deleted', false)
+        .single();
+
+      if (error || !post) {
+        return res.status(404).json({ success: false, error: 'Post not found' });
+      }
+
+      // Get vote score for this post
+      const { data: votes } = await supabaseAdmin
+        .from('forum_votes')
+        .select('vote_value')
+        .eq('post_id', id)
+        .is('thread_id', null);
+
+      const voteScore = (votes ?? []).reduce((sum, v) => sum + (v.vote_value ?? 0), 0);
+
+      res.json({
+        success: true,
+        data: { ...(post as any), vote_score: voteScore },
+      });
+    } catch (error) {
+      logger.error('GET /forum/posts/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
  * POST /api/forum/posts
  * Create a new post (reply)
  */
