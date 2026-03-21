@@ -26,6 +26,7 @@
 import { createHmac } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { supabaseAdmin } from '../supabase.js';
+import { authenticate, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -159,6 +160,11 @@ router.post('/exchange', async (req: Request, res: Response) => {
       const lovableBio      = (lovableMeta.bio      as string | undefined)?.trim() || undefined;
       const lovableLocation = (lovableMeta.location as string | undefined)?.trim() || undefined;
       const lovablePhone    = (lovableMeta.phone    as string | undefined)?.trim() || undefined;
+      // Lovable may signal a verified identity (e.g. KYC or email-verified flag)
+      const lovableVerified =
+        typeof lovableMeta.verified === 'boolean' ? lovableMeta.verified :
+        typeof lovableMeta.email_verified === 'boolean' ? lovableMeta.email_verified :
+        undefined;
 
       // Build the sync payload — include every field Lovable sent a value for.
       // Fields absent from Lovable metadata are left as-is in the database.
@@ -171,6 +177,7 @@ router.post('/exchange', async (req: Request, res: Response) => {
       if (lovableBio      !== undefined) profileSync.bio        = lovableBio;
       if (lovableLocation !== undefined) profileSync.location   = lovableLocation;
       if (lovablePhone    !== undefined) profileSync.phone      = lovablePhone;
+      if (lovableVerified !== undefined) profileSync.verified   = lovableVerified;
 
       if (!existingUser) {
         // New user — also set the default role on first insert
@@ -265,3 +272,171 @@ router.post('/exchange', async (req: Request, res: Response) => {
 });
 
 export default router;
+
+/**
+ * GET /api/auth/me
+ * Returns the fully Lovable-synced profile for the currently authenticated user.
+ * This is the canonical "who am I?" endpoint — always reflects the latest
+ * data written by the most recent /exchange call (Lovable is source of truth).
+ *
+ * Returns the same rich shape as GET /api/users/me but is mounted on /api/auth
+ * so it's accessible before any user-scoped routes are set up on the frontend.
+ */
+router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { data: profile, error } = await supabaseAdmin
+      .from('profiles')
+      .select(
+        'id, email, full_name, avatar_url, role, verified, company, bio, sector, location, phone, ' +
+        'reputation_score, consent_marketing, consent_data_processing, last_seen_at, created_at, updated_at'
+      )
+      .eq('id', req.user!.id)
+      .single();
+
+    if (error || !profile) {
+      return res.status(404).json({ success: false, error: 'Profile not found' });
+    }
+
+    return res.json({ success: true, data: profile });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[auth/me] error:', message);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/auth/refresh
+ * Accepts a Lovable access_token (same payload as /exchange) together with
+ * the current collaboration refresh_token and returns a fresh session.
+ *
+ * Why this exists:
+ *  - Lovable JWTs expire. When the frontend detects a 401 it re-POSTs the
+ *    fresh Lovable token here instead of calling /exchange again (which
+ *    performs an expensive admin API round-trip).
+ *  - We first try the Supabase refresh-token path (cheap). If that succeeds
+ *    we also re-sync the updated Lovable metadata so the profile stays fresh.
+ *  - If the refresh_token itself has expired, we fall back to a full
+ *    signInWithPassword (same as /exchange step 4) so the frontend always
+ *    gets a usable session back.
+ */
+router.post('/refresh', async (req: Request, res: Response) => {
+  const { access_token, refresh_token } = req.body ?? {};
+
+  if (!access_token || typeof access_token !== 'string') {
+    return res.status(400).json({ error: 'access_token is required' });
+  }
+
+  // Decode Lovable token (no signature check — same trust model as /exchange)
+  const payload = decodeJwtPayload(access_token);
+  if (!payload) {
+    return res.status(400).json({ error: 'Invalid access_token format' });
+  }
+
+  const email           = payload.email as string | undefined;
+  const lovableUserId   = payload.sub   as string | undefined;
+  const lovableMeta     = (payload.user_metadata as Record<string, unknown>) ?? {};
+
+  if (!email || !lovableUserId) {
+    return res.status(400).json({ error: 'access_token must contain email and sub claims' });
+  }
+
+  const supabaseUrl  = process.env.SUPABASE_URL!;
+  const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+  try {
+    type SessionPayload = { access_token: string; refresh_token: string; user?: { id: string } };
+    let sessionData: SessionPayload | null = null;
+
+    // ── 1. Try refresh-token flow (fast path) ──────────────────────────────
+    if (refresh_token && typeof refresh_token === 'string') {
+      const refreshResp = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ refresh_token }),
+      });
+
+      if (refreshResp.ok) {
+        const body = await refreshResp.json() as SessionPayload;
+        if (body?.access_token) sessionData = body;
+      }
+    }
+
+    // ── 2. Fall back to password sign-in (same as /exchange step 4) ────────
+    if (!sessionData) {
+      const password    = derivePassword(lovableUserId);
+      const tokenResp   = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!tokenResp.ok) {
+        const errBody = await tokenResp.json().catch(() => ({}));
+        console.error('[auth/refresh] password fallback failed:', tokenResp.status, errBody);
+        return res.status(401).json({ error: 'Session refresh failed. Please sign in again.' });
+      }
+
+      sessionData = await tokenResp.json() as SessionPayload;
+    }
+
+    if (!sessionData?.access_token) {
+      return res.status(401).json({ error: 'Could not obtain a session token' });
+    }
+
+    // ── 3. Re-sync Lovable profile metadata (fire-and-forget) ──────────────
+    // Lovable is always source of truth — refresh is another opportunity to sync.
+    setImmediate(async () => {
+      try {
+        const userId = sessionData!.user?.id;
+        if (!userId) return;
+
+        const lovableFullName =
+          (lovableMeta.full_name  as string | undefined)?.trim() ||
+          (lovableMeta.name       as string | undefined)?.trim() ||
+          ((lovableMeta.first_name as string | undefined)
+            ? `${lovableMeta.first_name} ${lovableMeta.last_name ?? ''}`.trim()
+            : undefined);
+
+        const lovableAvatar =
+          (lovableMeta.avatar_url as string | undefined) ||
+          (lovableMeta.picture    as string | undefined) ||
+          undefined;
+
+        const profileSync: Record<string, unknown> = { email };
+        if (lovableFullName !== undefined)               profileSync.full_name  = lovableFullName;
+        if (lovableAvatar   !== undefined)               profileSync.avatar_url = lovableAvatar;
+        const extras: Array<[string, string]> = [
+          ['company', 'company'], ['sector', 'sector'], ['bio', 'bio'],
+          ['location', 'location'], ['phone', 'phone'],
+        ];
+        for (const [meta, col] of extras) {
+          const v = (lovableMeta[meta] as string | undefined)?.trim();
+          if (v) profileSync[col] = v;
+        }
+        if (typeof lovableMeta.verified === 'boolean')       profileSync.verified = lovableMeta.verified;
+        else if (typeof lovableMeta.email_verified === 'boolean') profileSync.verified = lovableMeta.email_verified;
+
+        await supabaseAdmin.from('profiles').update(profileSync).eq('id', userId);
+      } catch { /* non-fatal */ }
+    });
+
+    return res.json({
+      access_token:  sessionData.access_token,
+      refresh_token: sessionData.refresh_token,
+    });
+
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[auth/refresh] Unexpected error:', message);
+    return res.status(500).json({ error: 'Internal server error during token refresh' });
+  }
+});

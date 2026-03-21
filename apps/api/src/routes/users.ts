@@ -26,6 +26,10 @@ const updateProfileSchema = z.object({
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
+const leaderboardQuerySchema = z.object({
+  limit: z.string().optional().transform(v => Math.min(Number(v) || 20, 100)),
+});
+
 /**
  * GET /api/users/me
  * Get the authenticated user's own full profile
@@ -159,6 +163,40 @@ router.get(
 );
 
 /**
+ * GET /api/users/leaderboard
+ * Top N users ranked by reputation_score.
+ * Must appear BEFORE /:id to avoid route-param capture.
+ */
+router.get(
+  '/leaderboard',
+  authenticate,
+  validateQuery(leaderboardQuerySchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 20, 100);
+
+      const { data, error } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, avatar_url, role, company, sector, reputation_score, verified')
+        .eq('archived', false)
+        .order('reputation_score', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        logger.error('Failed to fetch leaderboard', { error });
+        return res.status(500).json({ success: false, error: 'Failed to fetch leaderboard' });
+      }
+
+      const ranked = (data ?? []).map((user, index) => ({ rank: index + 1, ...user }));
+      res.json({ success: true, data: ranked });
+    } catch (error) {
+      logger.error('Leaderboard error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
  * GET /api/users/blocked
  * List all users the caller has blocked.
  * Must appear BEFORE /:id to avoid being caught by the param route.
@@ -222,6 +260,117 @@ router.get(
       res.json({ success: true, data: { ...user, is_blocked: !!blockRow } });
     } catch (error) {
       logger.error('Error fetching user', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * GET /api/users/:id/reputation
+ * Public reputation history — forum votes cast on this user's content.
+ * Shows a chronological record of upvotes/downvotes with context.
+ * Must appear BEFORE /:id/block to be matched correctly.
+ */
+router.get(
+  '/:id/reputation',
+  authenticate,
+  validateParams(idParamSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      // Confirm user exists
+      const { data: profile, error: profErr } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, avatar_url, reputation_score')
+        .eq('id', id)
+        .eq('archived', false)
+        .single();
+
+      if (profErr || !profile) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+
+      // Fetch votes on their forum posts (most recent first)
+      const { data: postVotes } = await supabaseAdmin
+        .from('forum_votes')
+        .select(`
+          id, vote_value, created_at,
+          post:post_id (id, content, thread_id),
+          voter:user_id (id, full_name, avatar_url)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(50)
+        .not('post_id', 'is', null);
+
+      // Fetch votes on their forum threads (most recent first)
+      const { data: threadVotes } = await supabaseAdmin
+        .from('forum_votes')
+        .select(`
+          id, vote_value, created_at,
+          thread:thread_id (id, title),
+          voter:user_id (id, full_name, avatar_url)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(50)
+        .not('thread_id', 'is', null);
+
+      // Filter to only votes on content authored by this user
+      const authoredPostIds = new Set<string>();
+      const authoredThreadIds = new Set<string>();
+
+      const { data: authoredPosts } = await supabaseAdmin
+        .from('forum_posts')
+        .select('id')
+        .eq('author_id', id);
+      (authoredPosts ?? []).forEach((p: any) => authoredPostIds.add(p.id));
+
+      const { data: authoredThreads } = await supabaseAdmin
+        .from('forum_threads')
+        .select('id')
+        .eq('author_id', id);
+      (authoredThreads ?? []).forEach((t: any) => authoredThreadIds.add(t.id));
+
+      const history = [
+        ...(postVotes ?? [])
+          .filter((v: any) => v.post_id && authoredPostIds.has(v.post_id))
+          .map((v: any) => ({
+            id:         v.id,
+            type:       'post' as const,
+            vote_value: v.vote_value,
+            delta:      v.vote_value === 1 ? +5 : -2,
+            content_id: v.post_id,
+            excerpt:    (v.post as any)?.content?.slice(0, 100) ?? null,
+            link:       `/forum/threads/${(v.post as any)?.thread_id}`,
+            voter:      v.voter,
+            created_at: v.created_at,
+          })),
+        ...(threadVotes ?? [])
+          .filter((v: any) => v.thread_id && authoredThreadIds.has(v.thread_id))
+          .map((v: any) => ({
+            id:         v.id,
+            type:       'thread' as const,
+            vote_value: v.vote_value,
+            delta:      v.vote_value === 1 ? +5 : -2,
+            content_id: v.thread_id,
+            excerpt:    (v.thread as any)?.title ?? null,
+            link:       `/forum/threads/${v.thread_id}`,
+            voter:      v.voter,
+            created_at: v.created_at,
+          })),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+       .slice(0, 50);
+
+      res.json({
+        success: true,
+        data: {
+          user: profile,
+          reputation_score: (profile as any).reputation_score,
+          history,
+        },
+      });
+    } catch (error) {
+      logger.error('Reputation history error', { error });
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }

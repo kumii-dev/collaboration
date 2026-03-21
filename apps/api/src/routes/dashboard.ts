@@ -38,7 +38,7 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
     const readMessageIds: string[] = (readRows ?? []).map((r: any) => r.message_id);
 
     // ── Step 2: run remaining counts in parallel
-    const [threadResult, postResult, repResult, unreadResult, reportResult] =
+    const [threadResult, postResult, repResult, unreadResult, reportResult, groupResult, eventResult] =
       await Promise.all([
         // Forum threads created by user
         supabaseAdmin
@@ -79,6 +79,18 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
           .from('reports')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'pending'),
+
+        // Groups the user is a member of
+        supabaseAdmin
+          .from('group_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId),
+
+        // Events the user has RSVP'd to (any status)
+        supabaseAdmin
+          .from('community_event_rsvps')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId),
       ]);
 
     // Log any Supabase errors so they appear in Vercel logs
@@ -87,6 +99,8 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
     if (repResult.error)    logger.warn('dashboard/stats: profiles error', { e: repResult.error });
     if (unreadResult.error) logger.warn('dashboard/stats: messages error', { e: unreadResult.error });
     if (reportResult.error) logger.warn('dashboard/stats: reports error',  { e: reportResult.error });
+    if (groupResult.error)  logger.warn('dashboard/stats: groups error',   { e: groupResult.error });
+    if (eventResult.error)  logger.warn('dashboard/stats: events error',   { e: eventResult.error });
 
     const role    = req.user!.role;
     const isAdmin = role === 'admin' || role === 'moderator';
@@ -99,6 +113,8 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
         total_posts:         postResult.count   ?? 0,
         reputation_score:    (repResult.data as any)?.reputation_score ?? 0,
         unread_messages:     unreadResult.count  ?? 0,
+        groups_joined:       groupResult.count   ?? 0,
+        events_rsvpd:        eventResult.count   ?? 0,
         pending_reports:     isAdmin ? (reportResult.count ?? 0) : undefined,
       },
     });

@@ -11,7 +11,8 @@ export interface AuthRequest extends Request {
 }
 
 /**
- * Middleware to authenticate requests using Supabase JWT
+ * Middleware to authenticate requests using Supabase JWT.
+ * Also enforces active suspension/ban from moderation_actions.
  */
 export async function authenticate(
   req: AuthRequest,
@@ -57,6 +58,39 @@ export async function authenticate(
         error: 'User profile not found',
       });
       return;
+    }
+
+    // ── Suspension / ban enforcement ─────────────────────────────────────────
+    // Check for any active suspend or ban that has not yet expired.
+    // Admins and moderators are exempt from enforcement.
+    if (profile.role !== 'admin' && profile.role !== 'moderator') {
+      const now = new Date().toISOString();
+      const { data: activeAction } = await supabaseAdmin
+        .from('moderation_actions')
+        .select('action_type, expires_at, reason')
+        .eq('target_user_id', user.id)
+        .in('action_type', ['suspend', 'ban'])
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (activeAction) {
+        const isBan     = activeAction.action_type === 'ban';
+        const expiresAt = activeAction.expires_at
+          ? ` until ${new Date(activeAction.expires_at).toUTCString()}`
+          : ' permanently';
+
+        logger.warn('Blocked request from suspended/banned user', { userId: user.id, action: activeAction.action_type });
+        res.status(403).json({
+          success: false,
+          error: isBan
+            ? `Your account has been banned${expiresAt}. Reason: ${activeAction.reason}`
+            : `Your account is suspended${expiresAt}. Reason: ${activeAction.reason}`,
+          code: isBan ? 'account_banned' : 'account_suspended',
+        });
+        return;
+      }
     }
 
     req.user = {
