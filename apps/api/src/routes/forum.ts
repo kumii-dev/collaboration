@@ -693,15 +693,56 @@ router.post(
         data: { post },
       });
 
-      // Fire-and-forget AI content moderation
-      setImmediate(() =>
-        runAIModeration({
-          type: 'post',
-          id: post.id,
-          content: sanitizedContent,
-          authorId: req.user!.id,
-        }).catch(() => {})
-      );
+      // Fire-and-forget: AI moderation + reply notification to thread author
+      setImmediate(async () => {
+        try {
+          // AI moderation
+          await runAIModeration({
+            type: 'post',
+            id: post.id,
+            content: sanitizedContent,
+            authorId: req.user!.id,
+          });
+
+          // Notify thread author — skip if they are the one replying
+          const { data: thread } = await supabaseAdmin
+            .from('forum_threads')
+            .select('title, content, author_id, author:author_id (email, full_name)')
+            .eq('id', threadId)
+            .single();
+
+          if (!thread) return;
+
+          const threadAuthor = Array.isArray(thread.author) ? thread.author[0] : thread.author;
+          if (!threadAuthor || threadAuthor.email === req.user!.email) return;
+
+          const origin = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
+          const threadLink = `${origin}/forum/threads/${threadId}`;
+          const replierName = req.user!.email;
+
+          // In-app notification
+          await supabaseAdmin.from('notifications').insert({
+            user_id: thread.author_id,
+            type: 'reply',
+            title: `${replierName} replied to your thread`,
+            content: sanitizedContent.substring(0, 200),
+            link: `/forum/threads/${threadId}`,
+          });
+
+          // Email notification
+          await sendReplyEmail(
+            threadAuthor.email,
+            replierName,
+            (thread.content as string).substring(0, 200),
+            sanitizedContent.substring(0, 200),
+            threadLink
+          );
+        } catch (err) {
+          logger.error('Post reply notification error', {
+            err: err instanceof Error ? err.message : String(err),
+          });
+        }
+      });
     } catch (error) {
       logger.error('Create post error', { error });
       res.status(500).json({
