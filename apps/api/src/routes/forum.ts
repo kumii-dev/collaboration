@@ -1557,4 +1557,211 @@ router.get(
   }
 );
 
+// ── Content deletion ──────────────────────────────────────────────────────────
+
+/**
+ * DELETE /api/forum/posts/:id
+ * Soft-delete a forum post.
+ *   - Any authenticated user may delete their own post.
+ *   - Moderators/admins may delete any post.
+ * Sets deleted = true, deleted_at = NOW().
+ * Moderator deletes also create a moderation_actions row and audit log.
+ */
+router.delete(
+  '/posts/:id',
+  authenticate,
+  validateParams(z.object({ id: z.string().uuid() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      const role   = req.user!.role;
+      const isMod  = role === 'moderator' || role === 'admin';
+
+      // Fetch the post to check ownership
+      const { data: post, error: fetchError } = await supabaseAdmin
+        .from('forum_posts')
+        .select('id, author_id, content, thread_id, deleted')
+        .eq('id', id)
+        .single();
+
+      if (fetchError || !post) {
+        return res.status(404).json({ success: false, error: 'Post not found' });
+      }
+
+      if (post.deleted) {
+        return res.status(410).json({ success: false, error: 'Post already deleted' });
+      }
+
+      // Non-moderators can only delete their own posts
+      if (!isMod && post.author_id !== userId) {
+        return res.status(403).json({ success: false, error: 'Insufficient permissions' });
+      }
+
+      const { error: deleteError } = await supabaseAdmin
+        .from('forum_posts')
+        .update({ deleted: true, deleted_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (deleteError) {
+        logger.error('Failed to soft-delete post', { id, deleteError });
+        return res.status(500).json({ success: false, error: 'Failed to delete post' });
+      }
+
+      // If a moderator deleted someone else's content, record the moderation action
+      if (isMod && post.author_id !== userId) {
+        setImmediate(async () => {
+          try {
+            const { data: action } = await supabaseAdmin
+              .from('moderation_actions')
+              .insert({
+                moderator_id:   userId,
+                target_user_id: post.author_id,
+                action_type:    'remove_content',
+                reason:         'Content removed by moderator',
+                metadata:       { content_type: 'forum_post', content_id: id, thread_id: post.thread_id },
+              })
+              .select('id')
+              .single();
+
+            await supabaseAdmin.rpc('create_audit_log', {
+              p_user_id:       userId,
+              p_event_type:    'content_delete',
+              p_resource_type: 'forum_posts',
+              p_resource_id:   id,
+              p_details:       { action: 'moderator_delete', target_user_id: post.author_id, action_id: action?.id ?? null },
+            });
+          } catch (err) {
+            logger.warn('Post delete audit/moderation log failed', { err });
+          }
+        });
+      } else {
+        // Self-delete audit
+        setImmediate(async () => {
+          try {
+            await supabaseAdmin.rpc('create_audit_log', {
+              p_user_id:       userId,
+              p_event_type:    'content_delete',
+              p_resource_type: 'forum_posts',
+              p_resource_id:   id,
+              p_details:       { action: 'self_delete' },
+            });
+          } catch { /* non-fatal */ }
+        });
+      }
+
+      res.json({ success: true, data: { deleted: true } });
+    } catch (error) {
+      logger.error('DELETE /forum/posts/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/forum/threads/:id
+ * Soft-delete a forum thread (and cascade-mark all its posts deleted).
+ *   - Thread author may delete their own thread.
+ *   - Moderators/admins may delete any thread.
+ */
+router.delete(
+  '/threads/:id',
+  authenticate,
+  validateParams(z.object({ id: z.string().uuid() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      const role   = req.user!.role;
+      const isMod  = role === 'moderator' || role === 'admin';
+
+      // Fetch the thread to check ownership
+      const { data: thread, error: fetchError } = await supabaseAdmin
+        .from('forum_threads')
+        .select('id, author_id, title, deleted')
+        .eq('id', id)
+        .single();
+
+      if (fetchError || !thread) {
+        return res.status(404).json({ success: false, error: 'Thread not found' });
+      }
+
+      if (thread.deleted) {
+        return res.status(410).json({ success: false, error: 'Thread already deleted' });
+      }
+
+      if (!isMod && thread.author_id !== userId) {
+        return res.status(403).json({ success: false, error: 'Insufficient permissions' });
+      }
+
+      const now = new Date().toISOString();
+
+      // Soft-delete the thread
+      const { error: deleteError } = await supabaseAdmin
+        .from('forum_threads')
+        .update({ deleted: true, deleted_at: now })
+        .eq('id', id);
+
+      if (deleteError) {
+        logger.error('Failed to soft-delete thread', { id, deleteError });
+        return res.status(500).json({ success: false, error: 'Failed to delete thread' });
+      }
+
+      // Cascade: soft-delete all posts in this thread
+      await supabaseAdmin
+        .from('forum_posts')
+        .update({ deleted: true, deleted_at: now })
+        .eq('thread_id', id)
+        .eq('deleted', false);
+
+      // Record moderation action if moderator is deleting someone else's thread
+      if (isMod && thread.author_id !== userId) {
+        setImmediate(async () => {
+          try {
+            const { data: action } = await supabaseAdmin
+              .from('moderation_actions')
+              .insert({
+                moderator_id:   userId,
+                target_user_id: thread.author_id,
+                action_type:    'remove_content',
+                reason:         'Thread removed by moderator',
+                metadata:       { content_type: 'forum_thread', content_id: id, title: thread.title },
+              })
+              .select('id')
+              .single();
+
+            await supabaseAdmin.rpc('create_audit_log', {
+              p_user_id:       userId,
+              p_event_type:    'content_delete',
+              p_resource_type: 'forum_threads',
+              p_resource_id:   id,
+              p_details:       { action: 'moderator_delete', target_user_id: thread.author_id, action_id: action?.id ?? null },
+            });
+          } catch (err) {
+            logger.warn('Thread delete audit/moderation log failed', { err });
+          }
+        });
+      } else {
+        setImmediate(async () => {
+          try {
+            await supabaseAdmin.rpc('create_audit_log', {
+              p_user_id:       userId,
+              p_event_type:    'content_delete',
+              p_resource_type: 'forum_threads',
+              p_resource_id:   id,
+              p_details:       { action: 'self_delete' },
+            });
+          } catch { /* non-fatal */ }
+        });
+      }
+
+      res.json({ success: true, data: { deleted: true } });
+    } catch (error) {
+      logger.error('DELETE /forum/threads/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
 export default router;
+

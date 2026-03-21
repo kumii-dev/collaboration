@@ -6,6 +6,30 @@ import logger from '../logger.js';
 const router = Router();
 
 /**
+ * GET /api/notifications/unread-count
+ * Get the count of unread notifications for the authenticated user (for badge indicators)
+ */
+router.get('/unread-count', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { count, error } = await supabaseAdmin
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', req.user!.id)
+      .eq('read', false);
+
+    if (error) {
+      logger.error('Failed to fetch unread count', { error });
+      return res.status(500).json({ success: false, error: 'Failed to fetch unread count' });
+    }
+
+    res.json({ success: true, data: { unread_count: count ?? 0 } });
+  } catch (error) {
+    logger.error('Unread count error', { error });
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
  * GET /api/notifications
  * Get user's notifications
  */

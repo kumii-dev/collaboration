@@ -199,6 +199,23 @@ router.post('/exchange', async (req: Request, res: Response) => {
 
     console.log(`[auth/exchange] ✅ Session issued for ${email}`);
 
+    // Fire-and-forget: audit log the login event
+    if (provisionedUserId) {
+      setImmediate(async () => {
+        try {
+          await supabaseAdmin.rpc('create_audit_log', {
+            p_user_id:       provisionedUserId,
+            p_event_type:    'login',
+            p_resource_type: 'profiles',
+            p_resource_id:   provisionedUserId,
+            p_details:       { method: 'token_exchange', source: 'lovable' },
+          });
+        } catch {
+          // Non-fatal
+        }
+      });
+    }
+
     return res.json({
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,

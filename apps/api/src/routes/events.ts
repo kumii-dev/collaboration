@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../supabase.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { validateBody, validateParams } from '../middleware/validation.js';
+import { sendEmail } from '../services/email.js';
 import logger from '../logger.js';
 
 const router = Router();
@@ -19,6 +20,17 @@ const createEventSchema = z.object({
   max_attendees: z.number().int().positive().optional(),
   is_online:     z.boolean().optional().default(false),
 });
+
+const updateEventSchema = z.object({
+  title:         z.string().min(1).max(200).optional(),
+  description:   z.string().max(2000).optional(),
+  location:      z.string().max(300).optional(),
+  meeting_url:   z.string().url().optional().or(z.literal('')),
+  starts_at:     z.string().datetime().optional(),
+  ends_at:       z.string().datetime().optional(),
+  max_attendees: z.number().int().positive().nullable().optional(),
+  is_online:     z.boolean().optional(),
+}).refine(data => Object.keys(data).length > 0, { message: 'At least one field is required' });
 
 const rsvpSchema = z.object({
   status: z.enum(['going', 'interested', 'not_going']),
@@ -183,6 +195,142 @@ router.post('/', authenticate, validateBody(createEventSchema), async (req: Auth
     res.status(201).json({ success: true, data: result });
   } catch (err: any) {
     logger.error('POST /events', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/events/:id
+ * Update an event's details. Only admins, moderators, or the event creator may do this.
+ * If significant fields (title, starts_at, location) change, all "going" attendees
+ * receive an email notification.
+ */
+router.patch('/:id', authenticate, validateParams(idSchema), validateBody(updateEventSchema), async (req: AuthRequest, res) => {
+  try {
+    const { id }   = req.params;
+    const userId   = req.user!.id;
+    const role     = req.user!.role;
+    const isMod    = role === 'admin' || role === 'moderator';
+
+    // Fetch existing event
+    const { data: existing, error: fetchError } = await supabaseAdmin
+      .from('community_events')
+      .select('id, title, starts_at, location, created_by, is_cancelled')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !existing) {
+      return res.status(404).json({ success: false, error: 'Event not found' });
+    }
+
+    if (existing.is_cancelled) {
+      return res.status(400).json({ success: false, error: 'Cannot update a cancelled event' });
+    }
+
+    if (!isMod && existing.created_by !== userId) {
+      return res.status(403).json({ success: false, error: 'Only admins, moderators, or the event creator can edit this event' });
+    }
+
+    const updates = req.body as z.infer<typeof updateEventSchema>;
+    const payload: Record<string, unknown> = { ...updates, updated_at: new Date().toISOString() };
+
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from('community_events')
+      .update(payload)
+      .eq('id', id)
+      .select(`
+        *,
+        forum_categories!category_id (id, name),
+        profiles!community_events_created_by_fkey_profiles (id, email, avatar_url, full_name)
+      `)
+      .single();
+
+    if (updateError) {
+      logger.error('Failed to update event', { id, updateError });
+      return res.status(500).json({ success: false, error: 'Failed to update event' });
+    }
+
+    // Check if any "significant" fields changed to trigger attendee notifications
+    const significantChange =
+      (updates.title     !== undefined && updates.title     !== existing.title)     ||
+      (updates.starts_at !== undefined && updates.starts_at !== existing.starts_at) ||
+      (updates.location  !== undefined && updates.location  !== existing.location);
+
+    if (significantChange) {
+      setImmediate(async () => {
+        try {
+          // Get all "going" attendees (excluding the editor)
+          const { data: rsvps } = await supabaseAdmin
+            .from('community_event_rsvps')
+            .select('user_id, profiles!community_event_rsvps_user_id_fkey_profiles (email, full_name)')
+            .eq('event_id', id)
+            .eq('status', 'going')
+            .neq('user_id', userId);
+
+          if (!rsvps?.length) return;
+
+          const eventTitle = (updated as any).title ?? existing.title;
+          const changesHtml = [
+            updates.title     !== existing.title     ? `<li><strong>Title:</strong> ${updates.title}</li>`     : '',
+            updates.starts_at !== existing.starts_at ? `<li><strong>Date/Time:</strong> ${new Date(updates.starts_at!).toLocaleString()}</li>` : '',
+            updates.location  !== existing.location  ? `<li><strong>Location:</strong> ${updates.location ?? 'Not specified'}</li>` : '',
+          ].filter(Boolean).join('');
+
+          const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background-color: #4f46e5; color: white; padding: 20px; text-align: center; }
+                .content { padding: 20px; background-color: #f9fafb; }
+                .changes { background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 6px; margin: 15px 0; }
+                .button { display: inline-block; padding: 12px 24px; background-color: #4f46e5; color: white; text-decoration: none; border-radius: 6px; margin-top: 20px; }
+                .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header"><h2>Event Updated: ${eventTitle}</h2></div>
+                <div class="content">
+                  <p>An event you RSVP'd to has been updated. Here's what changed:</p>
+                  <div class="changes"><ul>${changesHtml}</ul></div>
+                  <p>Your RSVP is still active. Please review the changes and update your plans accordingly.</p>
+                </div>
+                <div class="footer">
+                  <p>You're receiving this because you RSVP'd as "Going" on Kumii.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `;
+
+          const emails = rsvps
+            .map((r: any) => r.profiles?.email)
+            .filter((e: string | undefined): e is string => Boolean(e));
+
+          // Send in batches of 10 to avoid rate limits
+          for (let i = 0; i < emails.length; i += 10) {
+            const batch = emails.slice(i, i + 10);
+            await Promise.allSettled(
+              batch.map(email =>
+                sendEmail({ to: email, subject: `Event updated: ${eventTitle}`, html })
+              )
+            );
+          }
+
+          logger.info('Event update notifications sent', { eventId: id, count: emails.length });
+        } catch (err) {
+          logger.warn('Failed to send event update notifications', { err });
+        }
+      });
+    }
+
+    const rsvp_counts = await getCountsForEvent(id);
+    res.json({ success: true, data: { ...updated, rsvp_counts } });
+  } catch (err: any) {
+    logger.error('PATCH /events/:id', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
