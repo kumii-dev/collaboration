@@ -377,7 +377,28 @@ router.post(
         });
       }
 
-      // Sanitize content
+      // Block check: prevent sending to a conversation where any other participant
+      // has blocked the sender or has been blocked by the sender.
+      const { data: otherParticipants } = await supabaseAdmin
+        .from('conversation_participants')
+        .select('user_id')
+        .eq('conversation_id', id)
+        .is('left_at', null)
+        .neq('user_id', req.user!.id);
+
+      if (otherParticipants?.length) {
+        const otherIds = otherParticipants.map((p: any) => p.user_id);
+        const { data: blockRows } = await supabaseAdmin
+          .from('user_blocks')
+          .select('id')
+          .or(
+            `and(blocker_id.eq.${req.user!.id},blocked_id.in.(${otherIds.join(',')})),` +
+            `and(blocked_id.eq.${req.user!.id},blocker_id.in.(${otherIds.join(',')}))`
+          );
+        if (blockRows && blockRows.length > 0) {
+          return res.status(403).json({ success: false, error: 'You cannot send messages in this conversation' });
+        }
+      }
       const sanitizedContent = sanitizeContent(content);
 
       // Profanity gate

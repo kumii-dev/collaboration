@@ -12,10 +12,12 @@ import authRoutes from './routes/auth.js';
 import chatRoutes from './routes/chat.js';
 import dashboardRoutes from './routes/dashboard.js';
 import forumRoutes from './routes/forum.js';
+import groupRoutes from './routes/groups.js';
 import moderationRoutes from './routes/moderation.js';
 import notificationsRoutes from './routes/notifications.js';
 import usersRoutes from './routes/users.js';
 import eventsRoutes from './routes/events.js';
+import attachmentsRoutes from './routes/attachments.js';
 
 const app = express();
 
@@ -199,10 +201,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatWriteLimiter, chatRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/forum', forumWriteLimiter, forumRoutes);
+app.use('/api/groups', groupRoutes);
 app.use('/api/moderation', reportLimiter, moderationRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/events', eventsRoutes);
+app.use('/api/attachments', attachmentsRoutes);
 
 // =====================================================
 // ERROR HANDLING

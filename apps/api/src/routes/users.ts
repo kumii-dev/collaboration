@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../supabase.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
-import { validateBody, validateQuery } from '../middleware/validation.js';
+import { validateBody, validateQuery, validateParams } from '../middleware/validation.js';
 import logger from '../logger.js';
 
 const router = Router();
@@ -19,9 +19,12 @@ const updateProfileSchema = z.object({
   company: z.string().max(200).optional(),
   sector: z.string().max(100).optional(),
   location: z.string().max(200).optional(),
+  phone: z.string().max(30).optional().or(z.literal('')),
   avatar_url: z.string().url().optional().or(z.literal('')),
   consent_marketing: z.boolean().optional(),
 });
+
+const idParamSchema = z.object({ id: z.string().uuid() });
 
 /**
  * GET /api/users/me
@@ -31,7 +34,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res) => {
   try {
     const { data: user, error } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, full_name, avatar_url, role, company, bio, sector, location, reputation_score, consent_marketing, consent_data_processing, last_seen_at, created_at')
+      .select('id, email, full_name, avatar_url, role, company, bio, sector, location, phone, reputation_score, consent_marketing, consent_data_processing, last_seen_at, created_at')
       .eq('id', req.user!.id)
       .single();
 
@@ -67,6 +70,7 @@ router.patch(
       if (updates.company !== undefined)           payload.company           = updates.company.trim();
       if (updates.sector !== undefined)            payload.sector            = updates.sector.trim();
       if (updates.location !== undefined)          payload.location          = updates.location.trim();
+      if (updates.phone !== undefined)             payload.phone             = updates.phone?.trim() || null;
       if (updates.avatar_url !== undefined)        payload.avatar_url        = updates.avatar_url || null;
       if (updates.consent_marketing !== undefined) payload.consent_marketing = updates.consent_marketing;
 
@@ -74,7 +78,7 @@ router.patch(
         .from('profiles')
         .update(payload)
         .eq('id', userId)
-        .select('id, email, full_name, avatar_url, role, company, bio, sector, location, reputation_score, consent_marketing, updated_at')
+        .select('id, email, full_name, avatar_url, role, company, bio, sector, location, phone, reputation_score, consent_marketing, updated_at')
         .single();
 
       if (error) {
@@ -107,7 +111,8 @@ router.patch(
 
 /**
  * GET /api/users/search
- * Search for users by name or email
+ * Search for users by name or email. Excludes users the caller has blocked
+ * and users who have blocked the caller.
  */
 router.get(
   '/search',
@@ -119,70 +124,206 @@ router.get(
       const limit = Number(req.query.limit) || 10;
       const currentUserId = req.user!.id;
 
-      // Search for users by name or email
-      const { data: users, error } = await supabaseAdmin
+      // Collect IDs to exclude: users I blocked + users who blocked me
+      const [{ data: iBlocked }, { data: blockedMe }] = await Promise.all([
+        supabaseAdmin.from('user_blocks').select('blocked_id').eq('blocker_id', currentUserId),
+        supabaseAdmin.from('user_blocks').select('blocker_id').eq('blocked_id', currentUserId),
+      ]);
+      const excludeIds = [
+        currentUserId,
+        ...(iBlocked  ?? []).map((r: any) => r.blocked_id),
+        ...(blockedMe ?? []).map((r: any) => r.blocker_id),
+      ];
+
+      let dbQuery = supabaseAdmin
         .from('profiles')
-        .select('id, email, full_name, avatar_url, role, company')
+        .select('id, email, full_name, avatar_url, role, company, sector')
         .or(`full_name.ilike.%${query}%,email.ilike.%${query}%`)
-        .neq('id', currentUserId) // Exclude current user
+        .not('id', 'in', `(${excludeIds.join(',')})`)
+        .eq('archived', false)
         .limit(limit);
+
+      const { data: users, error } = await dbQuery;
 
       if (error) {
         logger.error('Failed to search users', { error });
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to search users',
-        });
+        return res.status(500).json({ success: false, error: 'Failed to search users' });
       }
 
-      res.json({
-        success: true,
-        data: users || [],
-      });
+      res.json({ success: true, data: users || [] });
     } catch (error) {
       logger.error('Error searching users', { error });
-      res.status(500).json({
-        success: false,
-        error: 'Internal server error',
-      });
+      res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
 );
 
 /**
+ * GET /api/users/blocked
+ * List all users the caller has blocked.
+ * Must appear BEFORE /:id to avoid being caught by the param route.
+ */
+router.get('/blocked', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('user_blocks')
+      .select(`
+        id,
+        created_at,
+        blocked:blocked_id (id, email, full_name, avatar_url, role, company)
+      `)
+      .eq('blocker_id', req.user!.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      logger.error('Failed to fetch blocked users', { error });
+      return res.status(500).json({ success: false, error: 'Failed to fetch blocked users' });
+    }
+
+    res.json({ success: true, data: (data ?? []).map((r: any) => ({ ...r.blocked, blocked_at: r.created_at })) });
+  } catch (error) {
+    logger.error('Error fetching blocked users', { error });
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
  * GET /api/users/:id
- * Get user profile by ID
+ * Get a user's public profile. Returns is_blocked=true if the caller has blocked them.
  */
 router.get(
   '/:id',
   authenticate,
+  validateParams(idParamSchema),
   async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
+      const currentUserId = req.user!.id;
 
-      const { data: user, error } = await supabaseAdmin
-        .from('profiles')
-        .select('id, email, full_name, avatar_url, role, company, bio, sector, location, reputation_score')
-        .eq('id', id)
-        .single();
+      const [{ data: user, error }, { data: blockRow }] = await Promise.all([
+        supabaseAdmin
+          .from('profiles')
+          .select('id, email, full_name, avatar_url, role, company, bio, sector, location, phone, reputation_score, verified, created_at')
+          .eq('id', id)
+          .eq('archived', false)
+          .single(),
+        supabaseAdmin
+          .from('user_blocks')
+          .select('id')
+          .eq('blocker_id', currentUserId)
+          .eq('blocked_id', id)
+          .maybeSingle(),
+      ]);
 
       if (error || !user) {
-        return res.status(404).json({
-          success: false,
-          error: 'User not found',
-        });
+        return res.status(404).json({ success: false, error: 'User not found' });
       }
 
-      res.json({
-        success: true,
-        data: user,
-      });
+      res.json({ success: true, data: { ...user, is_blocked: !!blockRow } });
     } catch (error) {
       logger.error('Error fetching user', { error });
-      res.status(500).json({
-        success: false,
-        error: 'Internal server error',
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * POST /api/users/:id/block
+ * Block a user. Prevents them from messaging the caller and hides them in search.
+ */
+router.post(
+  '/:id/block',
+  authenticate,
+  validateParams(idParamSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id: targetId } = req.params;
+      const blockerId = req.user!.id;
+
+      if (targetId === blockerId) {
+        return res.status(400).json({ success: false, error: 'You cannot block yourself' });
+      }
+
+      // Confirm target user exists
+      const { data: target, error: targetErr } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('id', targetId)
+        .single();
+
+      if (targetErr || !target) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+
+      const { error } = await supabaseAdmin
+        .from('user_blocks')
+        .upsert({ blocker_id: blockerId, blocked_id: targetId }, { onConflict: 'blocker_id,blocked_id', ignoreDuplicates: true });
+
+      if (error) {
+        logger.error('Failed to block user', { error });
+        return res.status(500).json({ success: false, error: 'Failed to block user' });
+      }
+
+      // Also remove any existing conversation participants so they can't send DMs
+      // (best-effort — the RLS check in chat routes is the enforcement layer)
+      setImmediate(async () => {
+        try {
+          // Find direct conversations between the two users
+          const { data: convs } = await supabaseAdmin
+            .from('conversations')
+            .select('id')
+            .eq('type', 'direct')
+            .or(`created_by.eq.${blockerId},created_by.eq.${targetId}`);
+
+          if (convs?.length) {
+            const convIds = convs.map((c: any) => c.id);
+            // Soft-leave: set left_at for the blocked user in those convs
+            await supabaseAdmin
+              .from('conversation_participants')
+              .update({ left_at: new Date().toISOString() })
+              .in('conversation_id', convIds)
+              .eq('user_id', targetId)
+              .is('left_at', null);
+          }
+        } catch { /* non-fatal */ }
       });
+
+      res.json({ success: true, data: { blocked: true } });
+    } catch (error) {
+      logger.error('Error blocking user', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/users/:id/block
+ * Unblock a user.
+ */
+router.delete(
+  '/:id/block',
+  authenticate,
+  validateParams(idParamSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id: targetId } = req.params;
+      const blockerId = req.user!.id;
+
+      const { error } = await supabaseAdmin
+        .from('user_blocks')
+        .delete()
+        .eq('blocker_id', blockerId)
+        .eq('blocked_id', targetId);
+
+      if (error) {
+        logger.error('Failed to unblock user', { error });
+        return res.status(500).json({ success: false, error: 'Failed to unblock user' });
+      }
+
+      res.json({ success: true, data: { blocked: false } });
+    } catch (error) {
+      logger.error('Error unblocking user', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
 );
