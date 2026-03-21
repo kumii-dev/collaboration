@@ -31,7 +31,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    storageKey: 'kumii-collab-auth', // isolate from Lovable's own Supabase localStorage key
+    // Unique storage key isolates our session from Lovable's own Supabase client
+    // which runs in the same browser context (same-origin iframe). Without this
+    // both clients share 'sb-<ref>-auth-token' and trigger the
+    // "Multiple GoTrueClient instances" warning with unpredictable auth state.
+    storageKey: 'kumii-collab-auth',
   },
   realtime: {
     params: {

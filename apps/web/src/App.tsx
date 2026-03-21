@@ -41,11 +41,16 @@ const queryClient = new QueryClient({
 const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
 
 // Trusted origins for postMessage
-const TRUSTED_ORIGINS = ['https://kumii.africa', 'https://www.kumii.africa'];
+const TRUSTED_ORIGINS = [
+  'https://kumii.africa',
+  'https://www.kumii.africa',
+  'https://communities-ten.vercel.app',  // legacy Vercel deploy — kept while Lovable embed updates
+];
 const TRUSTED_PATTERNS = [
   /^https:\/\/[a-z0-9-]+\.lovable\.app$/,
   /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
   /^https:\/\/[a-z0-9-]+\.gptengineer\.app$/,
+  /^https:\/\/[a-z0-9-]+-[a-z0-9]+-[a-z0-9]+\.vercel\.app$/, // Vercel preview deploys
 ];
 function isTrustedOrigin(origin: string) {
   const trusted = (
@@ -321,7 +326,7 @@ function App() {
   return (
     <KumiiContext.Provider value={{ profile: kumiiProfile, startup: kumiiStartup }}>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route
               path="/login"

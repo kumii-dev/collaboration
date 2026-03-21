@@ -121,9 +121,13 @@ async function notifyModerators(
 
     if (!emails.length) return;
 
-    // Use the production URL when running in a deployed environment
+    // Derive the production app URL from env — APP_URL wins, then CORS_ORIGIN
+    // (if it isn't localhost), then fall back to the known production deployment.
     const origin =
-      process.env.CORS_ORIGIN?.replace('localhost:5173', 'communities-ten.vercel.app') ??
+      process.env.APP_URL ??
+      (process.env.CORS_ORIGIN && !process.env.CORS_ORIGIN.includes('localhost')
+        ? process.env.CORS_ORIGIN
+        : null) ??
       'https://communities-ten.vercel.app';
     const dashUrl = `${origin}/moderation`;
 
