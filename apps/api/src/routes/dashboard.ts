@@ -42,13 +42,13 @@ router.get('/stats', authenticate, async (req: AuthRequest, res) => {
       await Promise.all([
         // Forum threads created by user
         supabaseAdmin
-          .from('threads')
+          .from('forum_threads')
           .select('*', { count: 'exact', head: true })
           .eq('author_id', userId),
 
         // Forum posts (replies) by user
         supabaseAdmin
-          .from('posts')
+          .from('forum_posts')
           .select('*', { count: 'exact', head: true })
           .eq('author_id', userId),
 
@@ -126,7 +126,7 @@ router.get('/activity', authenticate, async (req: AuthRequest, res) => {
 
       // Recent forum threads created by user
       supabaseAdmin
-        .from('threads')
+        .from('forum_threads')
         .select('id, title, created_at, board_id')
         .eq('author_id', userId)
         .order('created_at', { ascending: false })
@@ -134,7 +134,7 @@ router.get('/activity', authenticate, async (req: AuthRequest, res) => {
 
       // Recent forum posts (replies) by user
       supabaseAdmin
-        .from('posts')
+        .from('forum_posts')
         .select('id, content, created_at, thread_id')
         .eq('author_id', userId)
         .order('created_at', { ascending: false })

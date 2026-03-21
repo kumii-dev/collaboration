@@ -1454,4 +1454,107 @@ router.get(
   }
 );
 
+// ── Validation schema for search ──────────────────────────────────────────────
+const searchSchema = z.object({
+  q:      z.string().min(2).max(200),
+  type:   z.enum(['thread', 'post', 'all']).optional().default('all'),
+  limit:  z.string().optional().transform(v => Math.min(Number(v) || 20, 50)),
+  offset: z.string().optional().transform(v => Number(v) || 0),
+});
+
+/**
+ * GET /api/forum/search?q=<query>&type=thread|post|all&limit=&offset=
+ * Full-text search across forum threads and posts.
+ * Uses Postgres ilike — sufficient for the current scale.
+ */
+router.get(
+  '/search',
+  authenticate,
+  validateQuery(searchSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const q      = String(req.query.q ?? '');
+      const type   = String(req.query.type  ?? 'all');
+      const limit  = Math.min(Number(req.query.limit)  || 20, 50);
+      const offset = Number(req.query.offset) || 0;
+
+      const pattern = `%${q}%`;
+
+      const [threadsRes, postsRes] = await Promise.all([
+        // Search threads
+        type !== 'post'
+          ? supabaseAdmin
+              .from('forum_threads')
+              .select(`
+                id, title, content, created_at,
+                author:author_id (id, full_name, avatar_url),
+                board:board_id (id, name)
+              `)
+              .or(`title.ilike.${pattern},content.ilike.${pattern}`)
+              .eq('deleted', false)
+              .order('last_post_at', { ascending: false })
+              .range(offset, offset + limit - 1)
+          : Promise.resolve({ data: [], error: null }),
+
+        // Search posts
+        type !== 'thread'
+          ? supabaseAdmin
+              .from('forum_posts')
+              .select(`
+                id, content, created_at,
+                author:author_id (id, full_name, avatar_url),
+                thread:thread_id (id, title)
+              `)
+              .ilike('content', pattern)
+              .eq('deleted', false)
+              .order('created_at', { ascending: false })
+              .range(offset, offset + limit - 1)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (threadsRes.error) logger.warn('forum/search threads error', { e: threadsRes.error });
+      if (postsRes.error)   logger.warn('forum/search posts error',   { e: postsRes.error });
+
+      const threads = (threadsRes.data ?? []).map((t: any) => ({
+        result_type: 'thread' as const,
+        id:          t.id,
+        title:       t.title,
+        excerpt:     (t.content as string)?.slice(0, 200) ?? '',
+        created_at:  t.created_at,
+        author:      t.author,
+        board:       t.board,
+        link:        `/forum/threads/${t.id}`,
+      }));
+
+      const posts = (postsRes.data ?? []).map((p: any) => ({
+        result_type: 'post' as const,
+        id:          p.id,
+        title:       (p.thread as any)?.title ?? 'Reply',
+        excerpt:     (p.content as string)?.slice(0, 200) ?? '',
+        created_at:  p.created_at,
+        author:      p.author,
+        thread:      p.thread,
+        link:        `/forum/threads/${(p.thread as any)?.id}`,
+      }));
+
+      // Interleave by date descending
+      const results = [...threads, ...posts].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      res.json({
+        success: true,
+        data: {
+          results: results.slice(0, limit),
+          query: q,
+          total: results.length,
+        },
+      });
+    } catch (error) {
+      logger.error('Forum search error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
 export default router;

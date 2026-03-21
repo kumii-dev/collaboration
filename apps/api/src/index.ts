@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import config from './config.js';
 import logger from './logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { supabaseAdmin } from './supabase.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -95,6 +96,43 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
+// ── Per-route write rate limiters ────────────────────────────────────────────
+// These are much tighter than the global limiter and keyed by authenticated
+// user ID (falls back to IP for unauthenticated hits).
+
+const keyByUser = (req: express.Request) =>
+  (req as any).user?.id ?? req.ip ?? 'unknown';
+
+/** 30 messages per minute per user */
+const chatWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: config.NODE_ENV === 'development' ? 500 : 30,
+  keyGenerator: keyByUser,
+  message: { success: false, error: 'You are sending messages too fast. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/** 10 new threads + 60 posts per 10 minutes per user */
+const forumWriteLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: config.NODE_ENV === 'development' ? 500 : 60,
+  keyGenerator: keyByUser,
+  message: { success: false, error: 'You are posting too fast. Please wait a moment.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/** 5 reports per hour per user (anti-abuse) */
+const reportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: config.NODE_ENV === 'development' ? 500 : 5,
+  keyGenerator: keyByUser,
+  message: { success: false, error: 'Report limit reached. Please try again in an hour.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -105,6 +143,28 @@ app.use((req, res, next) => {
     ip: req.ip,
     userAgent: req.get('user-agent'),
   });
+  next();
+});
+
+// ── last_seen_at heartbeat ────────────────────────────────────────────────────
+// Update profiles.last_seen_at at most once every 60 seconds per user.
+// Uses a simple in-memory timestamp map — resets on server restart, which is
+// acceptable (Vercel serverless restarts are frequent anyway).
+const lastSeenCache = new Map<string, number>();
+
+app.use((req: express.Request, _res, next) => {
+  const userId = (req as any).user?.id;
+  if (!userId) return next();
+
+  const now = Date.now();
+  const last = lastSeenCache.get(userId) ?? 0;
+  if (now - last > 60_000) {
+    lastSeenCache.set(userId, now);
+    void supabaseAdmin
+      .from('profiles')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('id', userId);
+  }
   next();
 });
 
@@ -136,10 +196,10 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/chat', chatRoutes);
+app.use('/api/chat', chatWriteLimiter, chatRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/forum', forumRoutes);
-app.use('/api/moderation', moderationRoutes);
+app.use('/api/forum', forumWriteLimiter, forumRoutes);
+app.use('/api/moderation', reportLimiter, moderationRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/events', eventsRoutes);

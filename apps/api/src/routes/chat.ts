@@ -698,4 +698,75 @@ router.post(
   }
 );
 
+/**
+ * GET /api/chat/search?q=<query>&limit=&offset=
+ * Search messages the authenticated user can see (i.e. in their conversations).
+ * Only returns messages from conversations the user participates in.
+ */
+router.get(
+  '/search',
+  authenticate,
+  validateQuery(
+    z.object({
+      q:      z.string().min(2).max(200),
+      limit:  z.string().optional().transform(v => Math.min(Number(v) || 20, 50)),
+      offset: z.string().optional().transform(v => Number(v) || 0),
+    })
+  ),
+  async (req: AuthRequest, res) => {
+    try {
+      const q      = String(req.query.q ?? '');
+      const limit  = Math.min(Number(req.query.limit)  || 20, 50);
+      const offset = Number(req.query.offset) || 0;
+
+      // Resolve the user's conversation IDs first (RLS-safe approach)
+      const { data: participantRows } = await supabaseAdmin
+        .from('conversation_participants')
+        .select('conversation_id')
+        .eq('user_id', req.user!.id)
+        .is('left_at', null);
+
+      const conversationIds = (participantRows ?? []).map((r: any) => r.conversation_id as string);
+
+      if (conversationIds.length === 0) {
+        return res.json({ success: true, data: { results: [], query: q, total: 0 } });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('messages')
+        .select(`
+          id, content, created_at, conversation_id,
+          sender:sender_id (id, full_name, avatar_url)
+        `)
+        .in('conversation_id', conversationIds)
+        .ilike('content', `%${q}%`)
+        .eq('deleted', false)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (error) {
+        logger.error('Chat search error', { error });
+        return res.status(500).json({ success: false, error: 'Search failed' });
+      }
+
+      const results = (data ?? []).map((m: any) => ({
+        id:              m.id,
+        excerpt:         (m.content as string)?.slice(0, 200) ?? '',
+        created_at:      m.created_at,
+        sender:          m.sender,
+        conversation_id: m.conversation_id,
+        link:            `/chat/${m.conversation_id}`,
+      }));
+
+      res.json({
+        success: true,
+        data: { results, query: q, total: results.length },
+      });
+    } catch (error) {
+      logger.error('Chat search error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
 export default router;
