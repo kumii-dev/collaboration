@@ -18,6 +18,7 @@ import notificationsRoutes from './routes/notifications.js';
 import usersRoutes from './routes/users.js';
 import eventsRoutes from './routes/events.js';
 import attachmentsRoutes from './routes/attachments.js';
+import adminRoutes from './routes/admin.js';
 
 const app = express();
 
@@ -207,6 +208,7 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/attachments', attachmentsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // =====================================================
 // ERROR HANDLING

@@ -4,6 +4,9 @@ import { supabaseAdmin } from '../supabase.js';
 import { authenticate, requireModerator, AuthRequest } from '../middleware/auth.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validation.js';
 import logger from '../logger.js';
+import { sanitizeContent, containsProfanity, extractMentions } from '../utils/helpers.js';
+import { runAIModeration } from '../services/moderation.js';
+import { sendMentionEmail } from '../services/email.js';
 
 const router = Router();
 
@@ -36,6 +39,15 @@ const listQuerySchema = z.object({
   offset: z.string().optional().transform(v => v ? parseInt(v) : 0),
 });
 
+const sendGroupMessageSchema = z.object({
+  content: z.string().min(1).max(5000),
+});
+
+const groupMessagesQuerySchema = z.object({
+  limit:  z.string().optional().transform(v => Math.min(Number(v) || 50, 100)),
+  before: z.string().uuid().optional(),
+});
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 /** Returns the caller's role in a group, or null if not a member */
@@ -47,6 +59,61 @@ async function getCallerRole(groupId: string, userId: string): Promise<'owner' |
     .eq('user_id', userId)
     .single();
   return (data?.role ?? null) as 'owner' | 'moderator' | 'member' | null;
+}
+
+/**
+ * Lazily create (or retrieve) the group conversation.
+ * Also ensures the requesting user is a conversation participant.
+ */
+async function getOrCreateGroupConversation(groupId: string, callerId: string): Promise<string> {
+  // 1. Check for existing linked conversation
+  const { data: grp } = await supabaseAdmin
+    .from('groups')
+    .select('id, name, conversation_id')
+    .eq('id', groupId)
+    .single();
+
+  if (!grp) throw new Error('Group not found');
+
+  if (grp.conversation_id) {
+    // Ensure caller is a participant (upsert is idempotent)
+    await supabaseAdmin
+      .from('conversation_participants')
+      .upsert({ conversation_id: grp.conversation_id, user_id: callerId }, { onConflict: 'conversation_id,user_id' });
+    return grp.conversation_id;
+  }
+
+  // 2. Create a new group conversation
+  const { data: conv, error: convErr } = await supabaseAdmin
+    .from('conversations')
+    .insert({ type: 'group', name: `group:${groupId}`, created_by: callerId })
+    .select('id')
+    .single();
+
+  if (convErr || !conv) throw new Error('Failed to create group conversation');
+
+  // 3. Link conversation back to the group
+  await supabaseAdmin
+    .from('groups')
+    .update({ conversation_id: conv.id })
+    .eq('id', groupId);
+
+  // 4. Sync ALL current members as conversation participants
+  const { data: members } = await supabaseAdmin
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', groupId);
+
+  if (members && members.length > 0) {
+    await supabaseAdmin
+      .from('conversation_participants')
+      .upsert(
+        members.map((m: any) => ({ conversation_id: conv.id, user_id: m.user_id })),
+        { onConflict: 'conversation_id,user_id' }
+      );
+  }
+
+  return conv.id;
 }
 
 // ── Routes ─────────────────────────────────────────────────────────────────────
@@ -278,6 +345,22 @@ router.post('/:id/join', authenticate, validateParams(idSchema), async (req: Aut
 
     if (error) throw error;
 
+    // If the group already has a conversation, add the new member to it
+    setImmediate(async () => {
+      try {
+        const { data: grp } = await supabaseAdmin
+          .from('groups')
+          .select('conversation_id')
+          .eq('id', id)
+          .single();
+        if (grp?.conversation_id) {
+          await supabaseAdmin
+            .from('conversation_participants')
+            .upsert({ conversation_id: grp.conversation_id, user_id: userId }, { onConflict: 'conversation_id,user_id' });
+        }
+      } catch { /* non-fatal */ }
+    });
+
     res.json({ success: true, data: { group_id: id, role: 'member' } });
   } catch (err: any) {
     logger.error('POST /groups/:id/join', err);
@@ -360,7 +443,7 @@ router.post(
       // In-app notification for the invited user
       setImmediate(async () => {
         try {
-          const { data: grp } = await supabaseAdmin.from('groups').select('name').eq('id', id).single();
+          const { data: grp } = await supabaseAdmin.from('groups').select('name, conversation_id').eq('id', id).single();
           await supabaseAdmin.from('notifications').insert({
             user_id: targetId,
             type:    'system',
@@ -368,6 +451,12 @@ router.post(
             content: `You have been added to the group "${(grp as any)?.name ?? 'a group'}"`,
             link:    `/groups/${id}`,
           });
+          // Sync the invited user into the group conversation if it exists
+          if ((grp as any)?.conversation_id) {
+            await supabaseAdmin
+              .from('conversation_participants')
+              .upsert({ conversation_id: (grp as any).conversation_id, user_id: targetId }, { onConflict: 'conversation_id,user_id' });
+          }
         } catch { /* non-fatal */ }
       });
 
@@ -473,6 +562,175 @@ router.patch(
       res.json({ success: true, data: { group_id: id, user_id: targetId, role: newRole } });
     } catch (err: any) {
       logger.error('PATCH /groups/:id/members/:userId', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+// ── Group Messaging ────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/groups/:id/messages
+ * Fetch messages for the group's linked conversation.
+ * Only group members may read.
+ */
+router.get(
+  '/:id/messages',
+  authenticate,
+  validateParams(idSchema),
+  validateQuery(groupMessagesQuerySchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id }   = req.params;
+      const userId   = req.user!.id;
+      const limit    = Math.min(Number(req.query.limit) || 50, 100);
+      const before   = req.query.before as string | undefined;
+
+      // Must be a group member
+      const callerRole = await getCallerRole(id, userId);
+      if (!callerRole) {
+        return res.status(403).json({ success: false, error: 'You are not a member of this group' });
+      }
+
+      const conversationId = await getOrCreateGroupConversation(id, userId);
+
+      let query = supabaseAdmin
+        .from('messages')
+        .select(`
+          id,
+          content,
+          edited,
+          edited_at,
+          created_at,
+          sender:sender_id (id, full_name, avatar_url, role),
+          message_reactions (id, emoji, user_id),
+          message_reads (user_id, read_at),
+          attachments (id, file_name, file_type, file_size, url)
+        `)
+        .eq('conversation_id', conversationId)
+        .eq('deleted', false)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (before) {
+        const { data: beforeMsg } = await supabaseAdmin
+          .from('messages')
+          .select('created_at')
+          .eq('id', before)
+          .single();
+        if (beforeMsg) {
+          query = query.lt('created_at', (beforeMsg as any).created_at);
+        }
+      }
+
+      const { data: messages, error } = await query;
+      if (error) throw error;
+
+      res.json({
+        success: true,
+        data: {
+          messages:        (messages ?? []).reverse(),
+          conversation_id: conversationId,
+        },
+      });
+    } catch (err: any) {
+      logger.error('GET /groups/:id/messages', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+/**
+ * POST /api/groups/:id/messages
+ * Send a message to the group.
+ * Only group members may post.
+ */
+router.post(
+  '/:id/messages',
+  authenticate,
+  validateParams(idSchema),
+  validateBody(sendGroupMessageSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id }    = req.params;
+      const userId    = req.user!.id;
+      const { content } = req.body as { content: string };
+
+      // Must be a group member
+      const callerRole = await getCallerRole(id, userId);
+      if (!callerRole) {
+        return res.status(403).json({ success: false, error: 'You are not a member of this group' });
+      }
+
+      // Profanity gate
+      if (containsProfanity(content)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Your message contains inappropriate language. Please revise and resend.',
+        });
+      }
+
+      const sanitized      = sanitizeContent(content);
+      const conversationId = await getOrCreateGroupConversation(id, userId);
+
+      const { data: message, error: msgErr } = await supabaseAdmin
+        .from('messages')
+        .insert({ conversation_id: conversationId, sender_id: userId, content: sanitized })
+        .select(`
+          id, content, created_at,
+          sender:sender_id (id, full_name, avatar_url)
+        `)
+        .single();
+
+      if (msgErr || !message) throw msgErr ?? new Error('Failed to insert message');
+
+      // Update conversation last_message_at
+      void supabaseAdmin
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', conversationId);
+
+      res.status(201).json({ success: true, data: { message, conversation_id: conversationId } });
+
+      // Fire-and-forget: @mention notifications + AI moderation
+      setImmediate(async () => {
+        try {
+          const mentions = extractMentions(content);
+          if (mentions.length > 0) {
+            const { data: mentionedUsers } = await supabaseAdmin
+              .from('profiles')
+              .select('id, email, full_name')
+              .in('id', mentions);
+
+            for (const user of mentionedUsers ?? []) {
+              await supabaseAdmin.from('notifications').insert({
+                user_id: user.id,
+                type:    'mention',
+                title:   `${req.user!.email} mentioned you in a group`,
+                content: sanitized.substring(0, 200),
+                link:    `/groups/${id}`,
+              });
+              await sendMentionEmail(
+                user.email,
+                req.user!.email,
+                sanitized.substring(0, 200),
+                `${process.env.CORS_ORIGIN}/groups/${id}`
+              );
+            }
+          }
+        } catch { /* non-fatal */ }
+      });
+
+      setImmediate(() =>
+        runAIModeration({
+          type:     'message',
+          id:       (message as any).id,
+          content:  sanitized,
+          authorId: userId,
+        }).catch(() => {})
+      );
+    } catch (err: any) {
+      logger.error('POST /groups/:id/messages', err);
       res.status(500).json({ success: false, error: err.message });
     }
   }

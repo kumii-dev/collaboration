@@ -448,4 +448,94 @@ router.post('/:id/reminder', authenticate, validateParams(idSchema), validateBod
   }
 });
 
+/**
+ * GET /api/events/reminders/due
+ * Returns all unsent reminders whose remind_at <= now, marks them as sent.
+ * Intended to be called by a Vercel cron job (secured by CRON_SECRET header).
+ *
+ * Cron example (vercel.json):
+ *   { "crons": [{ "path": "/api/events/reminders/due", "schedule": "* * * * *" }] }
+ */
+router.get('/reminders/due', async (req, res) => {
+  try {
+    // Lightweight secret check so only your cron caller can trigger sends
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret) {
+      const provided = req.headers['x-cron-secret'] ?? req.headers['authorization']?.replace('Bearer ', '');
+      if (provided !== cronSecret) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // Fetch due reminders (not yet sent)
+    const { data: reminders, error: fetchErr } = await supabaseAdmin
+      .from('event_reminders')
+      .select(`
+        id, remind_at, user_id, event_id,
+        user:user_id (id, email, full_name),
+        event:event_id (id, title, starts_at, location, meeting_url)
+      `)
+      .eq('sent', false)
+      .lte('remind_at', now);
+
+    if (fetchErr) throw fetchErr;
+
+    if (!reminders || reminders.length === 0) {
+      return res.json({ success: true, data: { processed: 0 } });
+    }
+
+    // Mark all as sent first (idempotent — prevents double-send on retry)
+    const reminderIds = reminders.map((r: any) => r.id);
+    await supabaseAdmin
+      .from('event_reminders')
+      .update({ sent: true })
+      .in('id', reminderIds);
+
+    // Send emails + in-app notifications (fire-and-forget each)
+    let processed = 0;
+    for (const reminder of reminders) {
+      const r = reminder as any;
+      const user  = r.user;
+      const event = r.event;
+      if (!user?.email || !event?.title) continue;
+
+      processed++;
+
+      setImmediate(async () => {
+        try {
+          // In-app notification
+          await supabaseAdmin.from('notifications').insert({
+            user_id: user.id,
+            type:    'system',
+            title:   `Reminder: ${event.title}`,
+            content: `Your event "${event.title}" starts at ${new Date(event.starts_at).toLocaleString()}.`,
+            link:    `/events/${event.id}`,
+          });
+
+          // Email
+          await sendEmail({
+            to:      user.email,
+            subject: `Reminder: ${event.title}`,
+            html: `
+              <h2>Event Reminder</h2>
+              <p>Hi ${user.full_name ?? 'there'},</p>
+              <p>This is a reminder that <strong>${event.title}</strong> is coming up.</p>
+              <p><strong>When:</strong> ${new Date(event.starts_at).toLocaleString()}</p>
+              ${event.location ? `<p><strong>Where:</strong> ${event.location}</p>` : ''}
+              ${event.meeting_url ? `<p><strong>Link:</strong> <a href="${event.meeting_url}">${event.meeting_url}</a></p>` : ''}
+            `,
+          });
+        } catch { /* non-fatal — reminder already marked sent */ }
+      });
+    }
+
+    res.json({ success: true, data: { processed } });
+  } catch (err: any) {
+    logger.error('GET /events/reminders/due', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

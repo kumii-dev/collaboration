@@ -39,6 +39,7 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
       .from('notifications')
       .select('*')
       .eq('user_id', req.user!.id)
+      .eq('archived', false)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -134,6 +135,33 @@ router.post('/mark-all-read', authenticate, async (req: AuthRequest, res) => {
       success: false,
       error: 'Internal server error',
     });
+  }
+});
+
+/**
+ * DELETE /api/notifications/:id
+ * Archive (soft-delete) a notification.
+ * Sets archived = true so it no longer appears in the default list.
+ */
+router.delete('/:id', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    const { error } = await supabaseAdmin
+      .from('notifications')
+      .update({ archived: true })
+      .eq('id', id)
+      .eq('user_id', req.user!.id);
+
+    if (error) {
+      logger.error('Failed to archive notification', { error });
+      return res.status(500).json({ success: false, error: 'Failed to archive notification' });
+    }
+
+    res.json({ success: true, data: { message: 'Notification archived' } });
+  } catch (error) {
+    logger.error('Archive notification error', { error });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

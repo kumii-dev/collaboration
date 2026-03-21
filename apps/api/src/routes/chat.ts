@@ -175,6 +175,21 @@ router.post(
       // Add current user to participants if not included
       const allParticipants = [...new Set([req.user!.id, ...participantIds])];
       
+      // For direct conversations, block check: prevent creating a DM with a blocked user
+      if (type === 'direct' && allParticipants.length === 2) {
+        const otherId = allParticipants.find(uid => uid !== req.user!.id)!;
+        const { data: blockRows } = await supabaseAdmin
+          .from('user_blocks')
+          .select('id')
+          .or(
+            `and(blocker_id.eq.${req.user!.id},blocked_id.eq.${otherId}),` +
+            `and(blocked_id.eq.${req.user!.id},blocker_id.eq.${otherId})`
+          );
+        if (blockRows && blockRows.length > 0) {
+          return res.status(403).json({ success: false, error: 'You cannot start a conversation with this user' });
+        }
+      }
+
       // For direct conversations, check if one already exists
       if (type === 'direct' && allParticipants.length === 2) {
         const { data: existing } = await supabaseAdmin.rpc('find_direct_conversation', {
