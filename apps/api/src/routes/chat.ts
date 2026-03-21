@@ -319,6 +319,53 @@ router.patch(
 );
 
 /**
+ * DELETE /api/chat/conversations/:id
+ * Leave a conversation — sets left_at on the participant row.
+ * For direct (type='direct') conversations the row is simply marked left.
+ * For group conversations (type='group') the caller must be a member.
+ */
+router.delete(
+  '/conversations/:id',
+  authenticate,
+  validateParams(uuidParamsSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id }   = req.params;
+      const userId   = req.user!.id;
+
+      // Must be an active participant
+      const { data: participant } = await supabaseAdmin
+        .from('conversation_participants')
+        .select('id')
+        .eq('conversation_id', id)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .maybeSingle();
+
+      if (!participant) {
+        return res.status(404).json({ success: false, error: 'Conversation not found or already left' });
+      }
+
+      const { error: leaveErr } = await supabaseAdmin
+        .from('conversation_participants')
+        .update({ left_at: new Date().toISOString() })
+        .eq('conversation_id', id)
+        .eq('user_id', userId);
+
+      if (leaveErr) {
+        logger.error('Failed to leave conversation', { leaveErr });
+        return res.status(500).json({ success: false, error: 'Failed to leave conversation' });
+      }
+
+      res.json({ success: true, data: { conversation_id: id, left: true } });
+    } catch (error) {
+      logger.error('DELETE /chat/conversations/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
  * GET /api/chat/conversations/:id/messages
  * Get messages in a conversation
  */

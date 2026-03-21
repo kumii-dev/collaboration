@@ -744,4 +744,100 @@ router.post(
   }
 );
 
+/**
+ * GET /api/groups/:id/activity
+ * Recent activity feed for a group — member joins + recent messages.
+ * Only group members may view.
+ * Query params: limit (default 20, max 50)
+ */
+router.get(
+  '/:id/activity',
+  authenticate,
+  validateParams(idSchema),
+  validateQuery(z.object({ limit: z.coerce.number().min(1).max(50).default(20) })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id }   = req.params;
+      const userId   = req.user!.id;
+      const limit    = Math.min(Number(req.query.limit) || 20, 50);
+
+      // Must be a group member
+      const callerRole = await getCallerRole(id, userId);
+      if (!callerRole) {
+        return res.status(403).json({ success: false, error: 'You are not a member of this group' });
+      }
+
+      const conversationId = await getOrCreateGroupConversation(id, userId);
+
+      // Fetch recent messages and member joins in parallel
+      const [messagesRes, joinsRes] = await Promise.all([
+        supabaseAdmin
+          .from('messages')
+          .select(`
+            id,
+            content,
+            created_at,
+            sender:sender_id (id, full_name, avatar_url)
+          `)
+          .eq('conversation_id', conversationId)
+          .eq('deleted', false)
+          .order('created_at', { ascending: false })
+          .limit(limit),
+
+        supabaseAdmin
+          .from('group_members')
+          .select(`
+            user_id,
+            role,
+            joined_at,
+            member:user_id (id, full_name, avatar_url)
+          `)
+          .eq('group_id', id)
+          .order('joined_at', { ascending: false })
+          .limit(limit),
+      ]);
+
+      type ActivityItem = {
+        id: string;
+        type: 'message' | 'member_join';
+        actor: unknown;
+        description: string;
+        created_at: string;
+      };
+
+      const items: ActivityItem[] = [];
+
+      for (const msg of (messagesRes.data ?? [])) {
+        items.push({
+          id:          `msg-${msg.id}`,
+          type:        'message',
+          actor:       msg.sender,
+          description: (msg.content as string)?.slice(0, 100) ?? '',
+          created_at:  msg.created_at as string,
+        });
+      }
+
+      for (const join of (joinsRes.data ?? [])) {
+        items.push({
+          id:          `join-${join.user_id}`,
+          type:        'member_join',
+          actor:       join.member,
+          description: 'Joined the group',
+          created_at:  join.joined_at as string,
+        });
+      }
+
+      items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      res.json({
+        success: true,
+        data: { activity: items.slice(0, limit) },
+      });
+    } catch (err: any) {
+      logger.error('GET /groups/:id/activity', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
 export default router;

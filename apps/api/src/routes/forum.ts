@@ -469,6 +469,130 @@ router.get(
 );
 
 /**
+ * GET /api/forum/threads/:id/posts
+ * Paginated list of posts (replies) for a thread.
+ * Query params:
+ *   limit  = 1–100 (default 20)
+ *   offset = 0+    (default 0)
+ *   sort   = asc | desc (default asc — chronological)
+ */
+router.get(
+  '/threads/:id/posts',
+  authenticate,
+  validateParams(z.object({ id: z.string().uuid() })),
+  validateQuery(z.object({
+    limit:  z.coerce.number().min(1).max(100).default(20),
+    offset: z.coerce.number().min(0).default(0),
+    sort:   z.enum(['asc', 'desc']).default('asc'),
+  })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id: threadId } = req.params;
+      const limit   = Number(req.query.limit)  || 20;
+      const offset  = Number(req.query.offset) || 0;
+      const sortAsc = (req.query.sort ?? 'asc') === 'asc';
+      const userId  = req.user!.id;
+
+      // Verify thread exists and is not deleted
+      const { data: thread, error: threadErr } = await supabaseAdmin
+        .from('forum_threads')
+        .select('id, is_locked')
+        .eq('id', threadId)
+        .eq('deleted', false)
+        .single();
+
+      if (threadErr || !thread) {
+        return res.status(404).json({ success: false, error: 'Thread not found' });
+      }
+
+      // Fetch posts with author info and pagination
+      const { data: posts, error: postsErr, count } = await supabaseAdmin
+        .from('forum_posts')
+        .select(`
+          id,
+          thread_id,
+          parent_post_id,
+          content,
+          edited,
+          edited_at,
+          is_solution,
+          created_at,
+          updated_at,
+          author:author_id (
+            id,
+            full_name,
+            avatar_url,
+            role,
+            verified,
+            reputation_score
+          )
+        `, { count: 'exact' })
+        .eq('thread_id', threadId)
+        .eq('deleted', false)
+        .order('created_at', { ascending: sortAsc })
+        .range(offset, offset + limit - 1);
+
+      if (postsErr) {
+        logger.error('GET /forum/threads/:id/posts DB error', { postsErr });
+        return res.status(500).json({ success: false, error: 'Failed to fetch posts' });
+      }
+
+      // Enrich each post with vote_score and calling user's own vote
+      const postIds = (posts ?? []).map((p: any) => p.id);
+
+      const [votesRes, myVotesRes] = await Promise.all([
+        postIds.length > 0
+          ? supabaseAdmin
+              .from('forum_votes')
+              .select('post_id, vote_value')
+              .in('post_id', postIds)
+              .is('thread_id', null)
+          : Promise.resolve({ data: [] as any[], error: null }),
+
+        postIds.length > 0
+          ? supabaseAdmin
+              .from('forum_votes')
+              .select('post_id, vote_value')
+              .in('post_id', postIds)
+              .eq('user_id', userId)
+          : Promise.resolve({ data: [] as any[], error: null }),
+      ]);
+
+      // Aggregate votes per post
+      const voteMap: Record<string, number> = {};
+      for (const v of (votesRes.data ?? [])) {
+        voteMap[v.post_id] = (voteMap[v.post_id] ?? 0) + (v.vote_value ?? 0);
+      }
+
+      const myVoteMap: Record<string, number> = {};
+      for (const v of (myVotesRes.data ?? [])) {
+        myVoteMap[v.post_id] = v.vote_value ?? 0;
+      }
+
+      const enriched = (posts ?? []).map((post: any) => ({
+        ...post,
+        vote_score: voteMap[post.id] ?? 0,
+        my_vote:    myVoteMap[post.id] ?? 0,
+      }));
+
+      res.json({
+        success: true,
+        data: {
+          posts:      enriched,
+          total:      count ?? 0,
+          limit,
+          offset,
+          is_locked:  thread.is_locked,
+        },
+      });
+    } catch (error) {
+      logger.error('GET /forum/threads/:id/posts error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
  * PATCH /api/forum/threads/:id/pin
  * Pin or unpin a thread. Moderators and admins only.
  */

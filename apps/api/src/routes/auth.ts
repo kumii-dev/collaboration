@@ -400,13 +400,15 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
         .eq('id', userId)
         .single(),
 
-      // Check for an active suspension or ban
+      // Check for an active suspension or ban.
+      // Build the timestamp filter separately to avoid issues with '+' in ISO strings
+      // being misinterpreted by PostgREST URL parsing.
       supabaseAdmin
         .from('moderation_actions')
         .select('action_type, reason, expires_at')
         .eq('target_user_id', userId)
         .in('action_type', ['suspend', 'ban'])
-        .or('expires_at.is.null,expires_at.gt.' + new Date().toISOString())
+        .or(`expires_at.is.null,expires_at.gt.${encodeURIComponent(new Date().toISOString())}`)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),

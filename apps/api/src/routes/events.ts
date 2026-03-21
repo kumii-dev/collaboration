@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../supabase.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
-import { validateBody, validateParams } from '../middleware/validation.js';
+import { validateBody, validateParams, validateQuery } from '../middleware/validation.js';
 import { sendEmail } from '../services/email.js';
 import logger from '../logger.js';
 
@@ -110,6 +110,98 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+/**
+ * GET /api/events/calendar?month=<1-12>&year=<yyyy>
+ * Returns events for the given month grouped by date (YYYY-MM-DD).
+ * Defaults to current month/year if not provided.
+ */
+router.get(
+  '/calendar',
+  authenticate,
+  validateQuery(z.object({
+    month:       z.coerce.number().min(1).max(12).optional(),
+    year:        z.coerce.number().min(2000).max(2100).optional(),
+    category_id: z.string().uuid().optional(),
+  })),
+  async (req: AuthRequest, res) => {
+    try {
+      const now   = new Date();
+      const month = Number(req.query.month ?? now.getMonth() + 1);
+      const year  = Number(req.query.year  ?? now.getFullYear());
+
+      // Build the inclusive date range for the month
+      const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
+      const endOfMonth   = new Date(Date.UTC(year, month, 1)); // exclusive
+
+      let query = supabaseAdmin
+        .from('community_events')
+        .select(`
+          id,
+          title,
+          description,
+          starts_at,
+          ends_at,
+          location,
+          is_cancelled,
+          category_id,
+          forum_categories!category_id (id, name),
+          community_event_rsvps (id, status, user_id)
+        `)
+        .eq('is_cancelled', false)
+        .gte('starts_at', startOfMonth.toISOString())
+        .lt('starts_at',  endOfMonth.toISOString())
+        .order('starts_at', { ascending: true });
+
+      if (req.query.category_id) {
+        query = query.eq('category_id', req.query.category_id as string);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const userId = req.user!.id;
+
+      // Group events by YYYY-MM-DD
+      const grouped: Record<string, unknown[]> = {};
+
+      for (const e of (data ?? [])) {
+        const dateKey = (e.starts_at as string).slice(0, 10); // YYYY-MM-DD
+        if (!grouped[dateKey]) grouped[dateKey] = [];
+
+        const rsvps     = (e as any).community_event_rsvps ?? [];
+        const userRsvp  = rsvps.find((r: any) => r.user_id === userId)?.status ?? null;
+
+        grouped[dateKey].push({
+          id:          e.id,
+          title:       e.title,
+          starts_at:   e.starts_at,
+          ends_at:     e.ends_at,
+          location:    e.location,
+          category:    e.forum_categories,
+          rsvp_counts: {
+            going:      rsvps.filter((r: any) => r.status === 'going').length,
+            interested: rsvps.filter((r: any) => r.status === 'interested').length,
+            not_going:  rsvps.filter((r: any) => r.status === 'not_going').length,
+          },
+          user_rsvp: userRsvp,
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          year,
+          month,
+          days: grouped,
+        },
+      });
+    } catch (err: any) {
+      logger.error('GET /events/calendar error', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
 
 /**
  * GET /api/events/:id

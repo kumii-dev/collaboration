@@ -130,8 +130,8 @@ router.get('/activity', authenticate, async (req: AuthRequest, res) => {
   const limit  = Math.min(Number(req.query.limit) || 10, 50);
 
   try {
-    // Gather recent actions across three event types in parallel
-    const [messagesRes, threadsRes, postsRes] = await Promise.all([
+    // Gather recent actions across event types in parallel
+    const [messagesRes, threadsRes, postsRes, eventsRes] = await Promise.all([
       // Recent chat messages sent by this user
       supabaseAdmin
         .from('messages')
@@ -155,11 +155,19 @@ router.get('/activity', authenticate, async (req: AuthRequest, res) => {
         .eq('author_id', userId)
         .order('created_at', { ascending: false })
         .limit(limit),
+
+      // Recent event RSVPs by user
+      supabaseAdmin
+        .from('community_event_rsvps')
+        .select('id, status, created_at, event:event_id (id, title)')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit),
     ]);
 
     type ActivityItem = {
       id: string;
-      type: 'message' | 'thread' | 'post';
+      type: 'message' | 'thread' | 'post' | 'event_rsvp';
       title: string;
       description: string;
       link: string;
@@ -198,6 +206,18 @@ router.get('/activity', authenticate, async (req: AuthRequest, res) => {
         description: (post.content as string)?.slice(0, 80) ?? '',
         link:        `/forum/threads/${post.thread_id}`,
         created_at:  post.created_at,
+      });
+    }
+
+    for (const rsvp of (eventsRes.data ?? [])) {
+      const evt = Array.isArray(rsvp.event) ? rsvp.event[0] : rsvp.event as any;
+      items.push({
+        id:          `rsvp-${rsvp.id}`,
+        type:        'event_rsvp',
+        title:       evt?.title ?? 'Event',
+        description: `RSVP'd as ${rsvp.status}`,
+        link:        `/events/${evt?.id ?? ''}`,
+        created_at:  rsvp.created_at as string,
       });
     }
 

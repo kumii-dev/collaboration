@@ -72,10 +72,22 @@ router.post(
 /**
  * GET /api/moderation/queue
  * Get pending reports (moderators only) — includes the actual flagged content
+ * Query params: limit (default 20, max 100), offset (default 0)
  */
-router.get('/queue', authenticate, requireModerator, async (req: AuthRequest, res) => {
+router.get(
+  '/queue',
+  authenticate,
+  requireModerator,
+  validateQuery(z.object({
+    limit:  z.coerce.number().min(1).max(100).default(20),
+    offset: z.coerce.number().min(0).default(0),
+  })),
+  async (req: AuthRequest, res) => {
   try {
-    const { data, error } = await supabaseAdmin
+    const limit  = Number(req.query.limit)  || 20;
+    const offset = Number(req.query.offset) || 0;
+
+    const { data, error, count } = await supabaseAdmin
       .from('reports')
       .select(`
         id,
@@ -88,9 +100,10 @@ router.get('/queue', authenticate, requireModerator, async (req: AuthRequest, re
         message_id,
         reporter:reporter_id (id, full_name, email),
         reported_user:reported_user_id (id, full_name, email)
-      `)
+      `, { count: 'exact' })
       .eq('status', 'pending')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       logger.error('Failed to fetch reports', { error });
@@ -143,7 +156,7 @@ router.get('/queue', authenticate, requireModerator, async (req: AuthRequest, re
 
     res.json({
       success: true,
-      data: { reports: enriched },
+      data: { reports: enriched, total: count ?? 0, limit, offset },
     });
   } catch (error) {
     logger.error('Get queue error', { error });
@@ -177,10 +190,14 @@ router.post(
           moderator_id: req.user!.id,
           target_user_id: targetUserId,
           action_type: actionType,
-          report_id: reportId,
+          report_id: reportId ?? null,
           reason,
-          duration_days: durationDays,
+          duration_days: durationDays ?? null,
           expires_at: expiresAt,
+          metadata: {
+            source: 'moderator_action',
+            report_id: reportId ?? null,
+          },
         })
         .select()
         .single();
@@ -291,17 +308,78 @@ router.patch(
 );
 
 /**
+ * PATCH /api/moderation/reports/:id/dismiss
+ * Dismiss a report (no action taken) — moderators only
+ */
+router.patch(
+  '/reports/:id/dismiss',
+  authenticate,
+  requireModerator,
+  validateParams(z.object({ id: z.string().uuid() })),
+  validateBody(z.object({ notes: z.string().max(1000).optional() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { notes } = req.body;
+
+      const { data: report, error } = await supabaseAdmin
+        .from('reports')
+        .update({
+          status: 'dismissed',
+          reviewed_by: req.user!.id,
+          reviewed_at: new Date().toISOString(),
+          ...(notes ? { notes } : {}),
+        })
+        .eq('id', id)
+        .select('id, status, reviewed_at')
+        .single();
+
+      if (error || !report) {
+        return res.status(404).json({ success: false, error: 'Report not found' });
+      }
+
+      setImmediate(async () => {
+        try {
+          await supabaseAdmin.rpc('create_audit_log', {
+            p_user_id: req.user!.id,
+            p_event_type: 'moderation_action',
+            p_resource_type: 'reports',
+            p_resource_id: id,
+            p_details: { action: 'dismiss', notes: notes ?? null },
+          });
+        } catch { /* non-fatal */ }
+      });
+
+      res.json({ success: true, data: { report } });
+    } catch (error) {
+      logger.error('Dismiss report error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
  * GET /api/moderation/reports
  * List all reports with optional status filter (moderators only)
- * Query params: status=pending|resolved|dismissed (default: all)
+ * Query params:
+ *   status  = pending | resolved | dismissed (default: all)
+ *   limit   = 1-100 (default 20)
+ *   offset  = 0+ (default 0)
  */
 router.get(
   '/reports',
   authenticate,
   requireModerator,
-  validateQuery(z.object({ status: z.enum(['pending', 'resolved', 'dismissed']).optional() })),
+  validateQuery(z.object({
+    status: z.enum(['pending', 'resolved', 'dismissed']).optional(),
+    limit:  z.coerce.number().min(1).max(100).default(20),
+    offset: z.coerce.number().min(0).default(0),
+  })),
   async (req: AuthRequest, res) => {
     try {
+      const limit  = Number(req.query.limit)  || 20;
+      const offset = Number(req.query.offset) || 0;
+
       let query = supabaseAdmin
         .from('reports')
         .select(`
@@ -318,22 +396,22 @@ router.get(
           reporter:reporter_id (id, full_name, email),
           reported_user:reported_user_id (id, full_name, email),
           reviewer:reviewed_by (id, full_name)
-        `)
+        `, { count: 'exact' })
         .order('created_at', { ascending: false })
-        .limit(100);
+        .range(offset, offset + limit - 1);
 
       if (req.query.status) {
         query = query.eq('status', req.query.status as string);
       }
 
-      const { data, error } = await query;
+      const { data, error, count } = await query;
 
       if (error) {
         logger.error('Failed to fetch reports', { error });
         return res.status(500).json({ success: false, error: 'Failed to fetch reports' });
       }
 
-      res.json({ success: true, data: { reports: data ?? [] } });
+      res.json({ success: true, data: { reports: data ?? [], total: count ?? 0, limit, offset } });
     } catch (error) {
       logger.error('Get reports error', { error });
       res.status(500).json({ success: false, error: 'Internal server error' });
