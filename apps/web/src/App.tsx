@@ -65,6 +65,10 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [iframeTimeout, setIframeTimeout] = useState(false);
 
+  // True while a /api/auth/exchange fetch is in flight — prevents the
+  // 20 s fallback timer from firing mid-exchange on slow connections.
+  const exchangeInProgressRef = useRef(false);
+
   // Refs to the active ping interval + fallback timer so "Try again" can restart them
   const activeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -107,6 +111,7 @@ function App() {
         const isWrongProject = /invalid.*jwt|invalid.*sig|jwt.*invalid/i.test(error?.message ?? '');
         if (isWrongProject || error) {
           console.warn('[Kumii] setSession failed, attempting server-side token exchange…', error?.message);
+          exchangeInProgressRef.current = true;
           try {
             const resp = await fetch('/api/auth/exchange', {
               method: 'POST',
@@ -121,6 +126,7 @@ function App() {
               });
               if (!exchError && exchData.session) {
                 console.log('[Kumii] Token exchange succeeded — user provisioned in this project');
+                exchangeInProgressRef.current = false;
                 setSession(exchData.session);
                 setLoading(false);
                 if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
@@ -135,8 +141,8 @@ function App() {
           } catch (fetchErr) {
             console.error('[Kumii] Token exchange fetch failed:', fetchErr);
           }
-          // Exchange also failed — show timeout UI (not wrongProject config error,
-          // since the exchange endpoint handles cross-project users gracefully)
+          exchangeInProgressRef.current = false;
+          // Exchange also failed — show timeout UI
           setIframeTimeout(true);
           setLoading(false);
           if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
@@ -184,7 +190,7 @@ function App() {
       if (session) setLoading(false);
     });
 
-    // ── KUMII_READY pings — retry every 800 ms, max 25 retries (~20 s) ───────
+    // ── KUMII_READY pings — retry every 1.2 s, max 33 retries (~40 s) ────────
     if (inIframe) {
       const ping = () => window.parent.postMessage({ type: 'KUMII_READY' }, '*');
       ping(); // immediate first ping
@@ -193,15 +199,25 @@ function App() {
       const interval = setInterval(() => {
         retries++;
         ping();
-        if (retries >= 25) clearInterval(interval); // ~20 s total
-      }, 800);
+        if (retries >= 33) clearInterval(interval); // ~40 s total
+      }, 1200);
 
-      // After 20 s with no KUMII_SESSION, give up on auto-auth and show hint
+      // After 40 s with no KUMII_SESSION, give up — but only if no exchange
+      // is currently in flight (exchange can take 3-5 s on Vercel cold start)
       const fallbackTimer = setTimeout(() => {
+        if (exchangeInProgressRef.current) {
+          // Exchange is still running — give it another 15 s before giving up
+          activeFallbackRef.current = setTimeout(() => {
+            setIframeTimeout(true);
+            setLoading(false);
+            clearInterval(interval);
+          }, 15000);
+          return;
+        }
         setIframeTimeout(true);
         setLoading(false);
         clearInterval(interval);
-      }, 20000);
+      }, 40000);
 
       // Expose interval + fallback ids so the "Try again" button can restart them
       activeIntervalRef.current = interval;
@@ -263,23 +279,24 @@ function App() {
                   setIframeTimeout(false);
                   setLoading(true);
 
-                  // Restart full ping cadence — 800 ms × 25 = 20 s
+                  // Restart full ping cadence — 1200 ms × 33 = 40 s
                   const ping = () => window.parent.postMessage({ type: 'KUMII_READY' }, '*');
                   ping(); // immediate
                   let retries = 0;
                   const interval = setInterval(() => {
                     retries++;
                     ping();
-                    if (retries >= 25) clearInterval(interval);
-                  }, 800);
+                    if (retries >= 33) clearInterval(interval);
+                  }, 1200);
                   activeIntervalRef.current = interval;
 
-                  // New 20 s fallback
+                  // New 40 s fallback
                   const fallback = setTimeout(() => {
+                    if (exchangeInProgressRef.current) return; // still exchanging
                     setIframeTimeout(true);
                     setLoading(false);
                     clearInterval(interval);
-                  }, 20000);
+                  }, 40000);
                   activeFallbackRef.current = fallback;
                 }}
                 style={{
