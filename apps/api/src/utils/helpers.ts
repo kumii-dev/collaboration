@@ -1,4 +1,10 @@
 import sanitizeHtml from 'sanitize-html';
+import { Filter } from 'bad-words';
+
+// Initialise profanity filter once (singleton)
+const profanityFilter = new Filter();
+// Add South-African slurs not in the default list
+profanityFilter.addWords('kaffir', 'kafir', 'boesman', 'coolie');
 
 /**
  * Sanitize HTML content to prevent XSS attacks
@@ -106,6 +112,30 @@ export function paginate<T>(
     pageSize,
     totalPages,
   };
+}
+
+/**
+ * Check whether plain text contains profanity
+ */
+export function containsProfanity(text: string): boolean {
+  const plain = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
+  try {
+    return profanityFilter.isProfane(plain);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Return a copy of the text with profanity replaced by asterisks
+ */
+export function filterProfanity(text: string): string {
+  const plain = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
+  try {
+    return profanityFilter.clean(plain);
+  } catch {
+    return plain;
+  }
 }
 
 /**

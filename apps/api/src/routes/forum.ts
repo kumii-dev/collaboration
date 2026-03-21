@@ -4,8 +4,9 @@ import { supabaseAdmin } from '../supabase.js';
 import { authenticate, requireModerator, AuthRequest } from '../middleware/auth.js';
 import { validateBody, validateQuery, validateParams } from '../middleware/validation.js';
 import logger from '../logger.js';
-import { sanitizeContent, extractMentions } from '../utils/helpers.js';
+import { sanitizeContent, extractMentions, containsProfanity } from '../utils/helpers.js';
 import { sendReplyEmail } from '../services/email.js';
+import { runAIModeration } from '../services/moderation.js';
 
 const router = Router();
 
@@ -484,6 +485,14 @@ router.post(
       const sanitizedContent = sanitizeContent(content);
       console.log('🔵 Content sanitized, length:', sanitizedContent.length);
 
+      // Profanity gate — reject before persisting
+      if (containsProfanity(title) || containsProfanity(content)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Your post contains inappropriate language. Please revise and resubmit.',
+        });
+      }
+
       const insertData = {
         board_id: boardId,
         author_id: req.user!.id,
@@ -525,6 +534,17 @@ router.post(
       }
 
       console.log('✅ Thread created successfully:', thread);
+
+      // Fire-and-forget AI content moderation (never blocks the response)
+      setImmediate(() =>
+        runAIModeration({
+          type: 'thread',
+          id: thread.id,
+          content: `${title}\n\n${sanitizedContent}`,
+          authorId: req.user!.id,
+        }).catch(() => {})
+      );
+
       res.status(201).json({
         success: true,
         data: { thread },
@@ -632,6 +652,14 @@ router.post(
 
       const sanitizedContent = sanitizeContent(content);
 
+      // Profanity gate
+      if (containsProfanity(content)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Your reply contains inappropriate language. Please revise and resubmit.',
+        });
+      }
+
       const { data: post, error } = await supabaseAdmin
         .from('forum_posts')
         .insert({
@@ -664,6 +692,16 @@ router.post(
         success: true,
         data: { post },
       });
+
+      // Fire-and-forget AI content moderation
+      setImmediate(() =>
+        runAIModeration({
+          type: 'post',
+          id: post.id,
+          content: sanitizedContent,
+          authorId: req.user!.id,
+        }).catch(() => {})
+      );
     } catch (error) {
       logger.error('Create post error', { error });
       res.status(500).json({

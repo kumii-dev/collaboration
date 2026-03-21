@@ -4,8 +4,9 @@ import { supabaseAdmin } from '../supabase.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { validateBody, validateQuery, validateParams } from '../middleware/validation.js';
 import logger from '../logger.js';
-import { sanitizeContent, extractMentions } from '../utils/helpers.js';
+import { sanitizeContent, extractMentions, containsProfanity } from '../utils/helpers.js';
 import { sendMentionEmail } from '../services/email.js';
+import { runAIModeration } from '../services/moderation.js';
 
 const router = Router();
 
@@ -379,6 +380,14 @@ router.post(
       // Sanitize content
       const sanitizedContent = sanitizeContent(content);
 
+      // Profanity gate
+      if (containsProfanity(content)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Your message contains inappropriate language. Please revise and resend.',
+        });
+      }
+
       // Create message
       const { data: message, error: messageError } = await supabaseAdmin
         .from('messages')
@@ -448,6 +457,16 @@ router.post(
         success: true,
         data: { message },
       });
+
+      // Fire-and-forget AI content moderation
+      setImmediate(() =>
+        runAIModeration({
+          type: 'message',
+          id: message.id,
+          content: sanitizedContent,
+          authorId: req.user!.id,
+        }).catch(() => {})
+      );
     } catch (error) {
       logger.error('Send message error', { error });
       res.status(500).json({
