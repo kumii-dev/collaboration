@@ -134,35 +134,97 @@ router.post('/exchange', async (req: Request, res: Response) => {
       provisionedUserId = createdUser.user?.id;
     }
 
-    // ── 3b. Upsert profile row (name, avatar) in this project's profiles table ──
-    // We always upsert — creates the row for new users, updates it for returning
-    // users. Role is intentionally NOT set here — admins are promoted directly
-    // in the profiles table via Supabase dashboard or SQL.
+    // ── 3b. Upsert profile row in this project's profiles table ──────────────
+    // Strategy:
+    //   - New users  → populate every field we can from Lovable metadata.
+    //   - Returning users → only sync fields the user has NOT already set
+    //     themselves (never downgrade role, never overwrite manual edits).
     if (provisionedUserId) {
-      const profileUpsert: Record<string, unknown> = {
-        id:    provisionedUserId,
-        email: email,
-        // Default role — must match the user_role enum in Supabase:
-        // ('entrepreneur', 'funder', 'advisor', 'moderator', 'admin')
-        // 'entrepreneur' is the default for new Lovable signups (see FIX_TRIGGER_ROLE.sql)
-        role:  'entrepreneur',
-      };
-      if (lovableMeta.full_name)  profileUpsert.full_name  = lovableMeta.full_name;
-      if (lovableMeta.first_name) profileUpsert.full_name  = `${lovableMeta.first_name} ${lovableMeta.last_name ?? ''}`.trim();
-      if (lovableMeta.avatar_url) profileUpsert.avatar_url = lovableMeta.avatar_url;
-      if (lovableMeta.picture)    profileUpsert.avatar_url = lovableMeta.picture;
+      // Resolve a best-effort full_name from whatever Lovable sends
+      const lovableFullName =
+        (lovableMeta.full_name as string | undefined)?.trim() ||
+        (lovableMeta.name    as string | undefined)?.trim()   ||
+        ((lovableMeta.first_name as string | undefined)
+          ? `${lovableMeta.first_name} ${lovableMeta.last_name ?? ''}`.trim()
+          : undefined);
 
-      const { error: upsertErr } = await supabaseAdmin
-        .from('profiles')
-        .upsert(profileUpsert, {
-          onConflict: 'id',
-          // Never downgrade an existing admin/moderator role back to 'member'
-          ignoreDuplicates: false,
-        });
+      const lovableAvatar =
+        (lovableMeta.avatar_url as string | undefined) ||
+        (lovableMeta.picture    as string | undefined) ||
+        undefined;
 
-      if (upsertErr) {
-        // Non-fatal — log but don't fail the token exchange
-        console.error('[auth/exchange] profile upsert error:', upsertErr.message);
+      // Additional profile fields Lovable may carry
+      const lovableCompany  = (lovableMeta.company  as string | undefined)?.trim() || undefined;
+      const lovableSector   = (lovableMeta.sector   as string | undefined)?.trim() || undefined;
+      const lovableBio      = (lovableMeta.bio      as string | undefined)?.trim() || undefined;
+      const lovableLocation = (lovableMeta.location as string | undefined)?.trim() || undefined;
+      const lovablePhone    = (lovableMeta.phone    as string | undefined)?.trim() || undefined;
+
+      if (!existingUser) {
+        // ── New user: populate everything available ──────────────────────────
+        const profileInsert: Record<string, unknown> = {
+          id:    provisionedUserId,
+          email: email,
+          role:  'entrepreneur',
+        };
+        if (lovableFullName) profileInsert.full_name = lovableFullName;
+        if (lovableAvatar)   profileInsert.avatar_url = lovableAvatar;
+        if (lovableCompany)  profileInsert.company  = lovableCompany;
+        if (lovableSector)   profileInsert.sector   = lovableSector;
+        if (lovableBio)      profileInsert.bio      = lovableBio;
+        if (lovableLocation) profileInsert.location = lovableLocation;
+        if (lovablePhone)    profileInsert.phone    = lovablePhone;
+
+        const { error: insertErr } = await supabaseAdmin
+          .from('profiles')
+          .upsert(profileInsert, { onConflict: 'id', ignoreDuplicates: false });
+
+        if (insertErr) {
+          console.error('[auth/exchange] profile insert error:', insertErr.message);
+        }
+      } else {
+        // ── Returning user: fetch current profile, only fill empty fields ────
+        // Never overwrite role (prevents admin demotion), never overwrite
+        // fields the user has already set through their profile settings.
+        const { data: currentProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('full_name, avatar_url, company, sector, bio, location, phone, role')
+          .eq('id', provisionedUserId)
+          .single();
+
+        const patch: Record<string, unknown> = {
+          // Always keep email in sync
+          email: email,
+        };
+
+        // Only fill blank fields — never overwrite manual edits
+        if (!currentProfile?.full_name && lovableFullName)  patch.full_name  = lovableFullName;
+        if (!currentProfile?.avatar_url && lovableAvatar)   patch.avatar_url = lovableAvatar;
+        if (!currentProfile?.company  && lovableCompany)    patch.company    = lovableCompany;
+        if (!currentProfile?.sector   && lovableSector)     patch.sector     = lovableSector;
+        if (!currentProfile?.bio      && lovableBio)        patch.bio        = lovableBio;
+        if (!currentProfile?.location && lovableLocation)   patch.location   = lovableLocation;
+        if (!currentProfile?.phone    && lovablePhone)      patch.phone      = lovablePhone;
+
+        // NEVER touch role — admins/moderators must not be downgraded
+        // Role is managed exclusively via Supabase dashboard / SQL
+
+        if (Object.keys(patch).length > 1) { // more than just email
+          const { error: patchErr } = await supabaseAdmin
+            .from('profiles')
+            .update(patch)
+            .eq('id', provisionedUserId);
+
+          if (patchErr) {
+            console.error('[auth/exchange] profile patch error:', patchErr.message);
+          }
+        } else {
+          // Always sync email even if nothing else changed
+          await supabaseAdmin
+            .from('profiles')
+            .update({ email })
+            .eq('id', provisionedUserId);
+        }
       }
     }
 
