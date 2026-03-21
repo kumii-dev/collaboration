@@ -271,6 +271,110 @@ router.post('/exchange', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/auth/sync
+ * Lovable server-side webhook — push updated user_metadata without requiring
+ * the user to be actively logged in.
+ *
+ * Body: { user_id: string (Lovable sub), user_metadata: Record<string,unknown> }
+ * Secured by X-Sync-Secret header == EXCHANGE_SECRET env var.
+ *
+ * This lets Lovable push profile changes (KYC approval, sector updates, etc.)
+ * to the collaboration project the moment they happen, rather than waiting for
+ * the next /exchange or /refresh call.
+ */
+router.post('/sync', async (req: Request, res: Response) => {
+  // Auth — same secret used by /exchange
+  const syncSecret = process.env.EXCHANGE_SECRET ?? process.env.JWT_SECRET ?? 'changeme';
+  const provided   = req.headers['x-sync-secret'] ?? req.headers['authorization']?.toString().replace('Bearer ', '');
+  if (provided !== syncSecret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const { user_id: lovableUserId, user_metadata: lovableMeta } = req.body ?? {};
+
+  if (!lovableUserId || typeof lovableUserId !== 'string') {
+    return res.status(400).json({ error: 'user_id is required' });
+  }
+  if (!lovableMeta || typeof lovableMeta !== 'object') {
+    return res.status(400).json({ error: 'user_metadata is required' });
+  }
+
+  try {
+    // Resolve the collaboration-project user by matching the stored lovable_user_id in auth.users metadata
+    const supabaseUrl = process.env.SUPABASE_URL!;
+    const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+    // Look up user by email if present; otherwise scan by lovable_user_id
+    const meta = lovableMeta as Record<string, unknown>;
+    const email = meta.email as string | undefined;
+
+    let collaborationUserId: string | undefined;
+
+    if (email) {
+      const resp = await fetch(
+        `${supabaseUrl}/auth/v1/admin/users?email=${encodeURIComponent(email)}&per_page=50`,
+        { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+      );
+      const data = await resp.json() as { users?: Array<{ id: string; user_metadata?: Record<string, unknown> }> };
+      const match = data.users?.find(u => (u as any).email === email);
+      collaborationUserId = match?.id;
+    }
+
+    if (!collaborationUserId) {
+      return res.status(404).json({ error: 'User not found in collaboration project' });
+    }
+
+    // Build profile sync payload — same resolution logic as /exchange
+    const lovableFullName =
+      (meta.full_name  as string | undefined)?.trim() ||
+      (meta.name       as string | undefined)?.trim() ||
+      ((meta.first_name as string | undefined)
+        ? `${meta.first_name} ${meta.last_name ?? ''}`.trim()
+        : undefined);
+
+    const lovableAvatar =
+      (meta.avatar_url as string | undefined) ||
+      (meta.picture    as string | undefined) ||
+      undefined;
+
+    const lovableVerified =
+      typeof meta.verified === 'boolean'       ? meta.verified :
+      typeof meta.email_verified === 'boolean' ? meta.email_verified :
+      undefined;
+
+    const profileSync: Record<string, unknown> = {};
+    if (email                !== undefined) profileSync.email      = email;
+    if (lovableFullName      !== undefined) profileSync.full_name  = lovableFullName;
+    if (lovableAvatar        !== undefined) profileSync.avatar_url = lovableAvatar;
+    if (lovableVerified      !== undefined) profileSync.verified   = lovableVerified;
+
+    for (const col of ['company', 'sector', 'bio', 'location', 'phone'] as const) {
+      const v = (meta[col] as string | undefined)?.trim();
+      if (v !== undefined) profileSync[col] = v;
+    }
+
+    if (Object.keys(profileSync).length > 0) {
+      const { error: updateErr } = await supabaseAdmin
+        .from('profiles')
+        .update({ ...profileSync, updated_at: new Date().toISOString() })
+        .eq('id', collaborationUserId);
+
+      if (updateErr) {
+        console.error('[auth/sync] profile update error:', updateErr.message);
+        return res.status(500).json({ error: 'Failed to sync profile' });
+      }
+    }
+
+    console.log(`[auth/sync] ✅ Profile synced for user ${collaborationUserId}`);
+    return res.json({ success: true, data: { user_id: collaborationUserId, fields_synced: Object.keys(profileSync) } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[auth/sync] Unexpected error:', message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
 
 /**
@@ -284,18 +388,45 @@ export default router;
  */
 router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { data: profile, error } = await supabaseAdmin
-      .from('profiles')
-      .select(
-        'id, email, full_name, avatar_url, role, verified, company, bio, sector, location, phone, ' +
-        'reputation_score, consent_marketing, consent_data_processing, last_seen_at, created_at, updated_at'
-      )
-      .eq('id', req.user!.id)
-      .single();
+    const userId = req.user!.id;
 
-    if (error || !profile) {
+    const [profileRes, moderationRes] = await Promise.all([
+      supabaseAdmin
+        .from('profiles')
+        .select(
+          'id, email, full_name, avatar_url, role, verified, company, bio, sector, location, phone, ' +
+          'reputation_score, consent_marketing, consent_data_processing, last_seen_at, created_at, updated_at'
+        )
+        .eq('id', userId)
+        .single(),
+
+      // Check for an active suspension or ban
+      supabaseAdmin
+        .from('moderation_actions')
+        .select('action_type, reason, expires_at')
+        .eq('target_user_id', userId)
+        .in('action_type', ['suspend', 'ban'])
+        .or('expires_at.is.null,expires_at.gt.' + new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    if (profileRes.error || !profileRes.data) {
       return res.status(404).json({ success: false, error: 'Profile not found' });
     }
+
+    const action = moderationRes.data;
+    const profileData = profileRes.data as unknown as Record<string, unknown>;
+    const profile = {
+      ...profileData,
+      is_suspended: action?.action_type === 'suspend',
+      is_banned:    action?.action_type === 'ban',
+      ...(action ? {
+        moderation_reason:     action.reason ?? null,
+        moderation_expires_at: action.expires_at ?? null,
+      } : {}),
+    };
 
     return res.json({ success: true, data: profile });
   } catch (err: unknown) {

@@ -259,6 +259,66 @@ router.post(
 );
 
 /**
+ * PATCH /api/chat/conversations/:id/participant
+ * Mute or archive a conversation for the calling user only.
+ * Body: { muted?: boolean, archived?: boolean }
+ * Updates `conversation_participants` row for the caller — does not affect other members.
+ */
+router.patch(
+  '/conversations/:id/participant',
+  authenticate,
+  validateParams(uuidParamsSchema),
+  validateBody(
+    z.object({
+      muted:    z.boolean().optional(),
+      archived: z.boolean().optional(),
+    }).refine(d => d.muted !== undefined || d.archived !== undefined, {
+      message: 'At least one of muted or archived is required',
+    })
+  ),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id }   = req.params;
+      const userId   = req.user!.id;
+      const { muted, archived } = req.body as { muted?: boolean; archived?: boolean };
+
+      // Verify caller is a participant
+      const { data: participant } = await supabaseAdmin
+        .from('conversation_participants')
+        .select('id')
+        .eq('conversation_id', id)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .maybeSingle();
+
+      if (!participant) {
+        return res.status(403).json({ success: false, error: 'You are not a participant in this conversation' });
+      }
+
+      const updates: Record<string, unknown> = {};
+      if (muted    !== undefined) updates.muted    = muted;
+      if (archived !== undefined) updates.archived = archived;
+
+      const { error: updateErr } = await supabaseAdmin
+        .from('conversation_participants')
+        .update(updates)
+        .eq('conversation_id', id)
+        .eq('user_id', userId);
+
+      if (updateErr) {
+        logger.error('Failed to update conversation participant', { updateErr });
+        return res.status(500).json({ success: false, error: 'Failed to update conversation settings' });
+      }
+
+      res.json({ success: true, data: { conversation_id: id, ...updates } });
+    } catch (error) {
+      logger.error('PATCH /chat/conversations/:id/participant error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
  * GET /api/chat/conversations/:id/messages
  * Get messages in a conversation
  */

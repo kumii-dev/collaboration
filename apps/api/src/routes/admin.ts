@@ -87,6 +87,78 @@ router.get(
 );
 
 /**
+ * GET /api/admin/users/:id
+ * Full profile detail for a single user, including moderation history and recent audit events.
+ */
+router.get(
+  '/users/:id',
+  validateParams(userIdParamSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      const [profileRes, moderationRes, auditRes] = await Promise.all([
+        // Full profile
+        supabaseAdmin
+          .from('profiles')
+          .select(
+            'id, email, full_name, role, verified, sector, company, bio, avatar_url, ' +
+            'phone, reputation_score, location, last_seen_at, created_at, updated_at, archived, ' +
+            'consent_marketing, consent_data_processing'
+          )
+          .eq('id', id)
+          .single(),
+
+        // Moderation history (actions taken against this user)
+        supabaseAdmin
+          .from('moderation_actions')
+          .select(`
+            id, action_type, reason, metadata, created_at, expires_at,
+            moderator:moderator_id (id, email, full_name)
+          `)
+          .eq('target_user_id', id)
+          .order('created_at', { ascending: false })
+          .limit(20),
+
+        // Recent audit events (actions the user performed)
+        supabaseAdmin
+          .from('audit_logs')
+          .select('id, event_type, resource_type, resource_id, details, created_at')
+          .eq('user_id', id)
+          .order('created_at', { ascending: false })
+          .limit(20),
+      ]);
+
+      if (profileRes.error || !profileRes.data) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+
+      // Determine active moderation status
+      const now = new Date().toISOString();
+      const activeAction = (moderationRes.data ?? []).find(
+        (a: any) => ['suspend', 'ban'].includes(a.action_type) &&
+          (!a.expires_at || a.expires_at > now)
+      );
+
+      res.json({
+        success: true,
+        data: {
+          profile:           profileRes.data,
+          is_suspended:      activeAction?.action_type === 'suspend',
+          is_banned:         activeAction?.action_type === 'ban',
+          active_action:     activeAction ?? null,
+          moderation_history: moderationRes.data ?? [],
+          recent_activity:   auditRes.data ?? [],
+        },
+      });
+    } catch (err: any) {
+      logger.error('GET /admin/users/:id', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+/**
  * PATCH /api/admin/users/:id/role
  * Change a user's role. Records a role_change audit event.
  */

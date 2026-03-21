@@ -449,6 +449,29 @@ router.post('/:id/reminder', authenticate, validateParams(idSchema), validateBod
 });
 
 /**
+ * DELETE /api/events/:id/reminder
+ * Cancel an existing reminder for the calling user.
+ */
+router.delete('/:id/reminder', authenticate, validateParams(idSchema), async (req: AuthRequest, res) => {
+  try {
+    const { id }   = req.params;
+    const userId   = req.user!.id;
+
+    const { error } = await supabaseAdmin
+      .from('event_reminders')
+      .delete()
+      .eq('event_id', id)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    res.json({ success: true, data: { message: 'Reminder cancelled' } });
+  } catch (err: any) {
+    logger.error('DELETE /events/:id/reminder', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * GET /api/events/reminders/due
  * Returns all unsent reminders whose remind_at <= now, marks them as sent.
  * Intended to be called by a Vercel cron job (secured by CRON_SECRET header).

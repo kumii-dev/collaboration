@@ -469,6 +469,126 @@ router.get(
 );
 
 /**
+ * PATCH /api/forum/threads/:id/pin
+ * Pin or unpin a thread. Moderators and admins only.
+ */
+router.patch(
+  '/threads/:id/pin',
+  authenticate,
+  requireModerator,
+  validateParams(z.object({ id: z.string().uuid() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      // Fetch current pin state
+      const { data: thread, error: fetchErr } = await supabaseAdmin
+        .from('forum_threads')
+        .select('id, is_pinned, title, deleted')
+        .eq('id', id)
+        .single();
+
+      if (fetchErr || !thread) {
+        return res.status(404).json({ success: false, error: 'Thread not found' });
+      }
+      if (thread.deleted) {
+        return res.status(410).json({ success: false, error: 'Thread has been deleted' });
+      }
+
+      const newPinned = !thread.is_pinned;
+
+      const { error: updateErr } = await supabaseAdmin
+        .from('forum_threads')
+        .update({ is_pinned: newPinned, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (updateErr) {
+        logger.error('Failed to toggle pin', { id, updateErr });
+        return res.status(500).json({ success: false, error: 'Failed to update thread' });
+      }
+
+      // Audit log (fire-and-forget)
+      setImmediate(async () => {
+        try {
+          await supabaseAdmin.rpc('create_audit_log', {
+            p_user_id:       req.user!.id,
+            p_event_type:    'moderation_action',
+            p_resource_type: 'forum_threads',
+            p_resource_id:   id,
+            p_details:       { action: newPinned ? 'pin' : 'unpin', title: thread.title },
+          });
+        } catch { /* non-fatal */ }
+      });
+
+      res.json({ success: true, data: { id, is_pinned: newPinned } });
+    } catch (error) {
+      logger.error('PATCH /forum/threads/:id/pin error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * PATCH /api/forum/threads/:id/lock
+ * Lock or unlock a thread. Moderators and admins only.
+ * A locked thread can still be read but no new posts may be added.
+ */
+router.patch(
+  '/threads/:id/lock',
+  authenticate,
+  requireModerator,
+  validateParams(z.object({ id: z.string().uuid() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      const { data: thread, error: fetchErr } = await supabaseAdmin
+        .from('forum_threads')
+        .select('id, is_locked, title, deleted')
+        .eq('id', id)
+        .single();
+
+      if (fetchErr || !thread) {
+        return res.status(404).json({ success: false, error: 'Thread not found' });
+      }
+      if (thread.deleted) {
+        return res.status(410).json({ success: false, error: 'Thread has been deleted' });
+      }
+
+      const newLocked = !thread.is_locked;
+
+      const { error: updateErr } = await supabaseAdmin
+        .from('forum_threads')
+        .update({ is_locked: newLocked, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (updateErr) {
+        logger.error('Failed to toggle lock', { id, updateErr });
+        return res.status(500).json({ success: false, error: 'Failed to update thread' });
+      }
+
+      // Audit log (fire-and-forget)
+      setImmediate(async () => {
+        try {
+          await supabaseAdmin.rpc('create_audit_log', {
+            p_user_id:       req.user!.id,
+            p_event_type:    'moderation_action',
+            p_resource_type: 'forum_threads',
+            p_resource_id:   id,
+            p_details:       { action: newLocked ? 'lock' : 'unlock', title: thread.title },
+          });
+        } catch { /* non-fatal */ }
+      });
+
+      res.json({ success: true, data: { id, is_locked: newLocked } });
+    } catch (error) {
+      logger.error('PATCH /forum/threads/:id/lock error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
  * POST /api/forum/threads
  * Create a new thread
  */
@@ -562,81 +682,11 @@ router.post(
   }
 );
 
-/**
- * GET /api/forum/threads/:id
- * Get thread with posts
- */
-router.get(
-  '/threads/:id',
-  authenticate,
-  validateParams(z.object({ id: z.string().uuid() })),
-  async (req: AuthRequest, res) => {
-    try {
-      const { id } = req.params;
-
-      // Increment view count
-      await supabaseAdmin.rpc('increment_thread_views', { thread_id: id });
-
-      const { data: thread, error } = await supabaseAdmin
-        .from('forum_threads')
-        .select(`
-          id,
-          title,
-          content,
-          is_pinned,
-          is_locked,
-          views_count,
-          created_at,
-          updated_at,
-          author:author_id (
-            id,
-            full_name,
-            avatar_url,
-            role,
-            verified,
-            reputation_score
-          ),
-          forum_posts (
-            id,
-            content,
-            edited,
-            edited_at,
-            created_at,
-            parent_post_id,
-            author:author_id (
-              id,
-              full_name,
-              avatar_url,
-              role,
-              verified
-            )
-          )
-        `)
-        .eq('id', id)
-        .eq('deleted', false)
-        .single();
-
-      if (error || !thread) {
-        logger.error('Failed to fetch thread', { error });
-        return res.status(404).json({
-          success: false,
-          error: 'Thread not found',
-        });
-      }
-
-      res.json({
-        success: true,
-        data: { thread },
-      });
-    } catch (error) {
-      logger.error('Get thread error', { error });
-      res.status(500).json({
-        success: false,
-        error: 'Internal server error',
-      });
-    }
-  }
-);
+// NOTE: GET /threads/:threadId (above) is the canonical single-thread handler.
+// The legacy GET /threads/:id handler that was here has been removed to fix the
+// duplicate-route bug — Express matched the first registration and the second
+// was dead code. The detailed /:threadId handler above already increments
+// views_count and returns the full thread shape including reply/vote counts.
 
 /**
  * POST /api/forum/posts
@@ -657,6 +707,20 @@ router.post(
         return res.status(400).json({
           success: false,
           error: 'Your reply contains inappropriate language. Please revise and resubmit.',
+        });
+      }
+
+      // Reject replies to locked threads
+      const { data: parentThread } = await supabaseAdmin
+        .from('forum_threads')
+        .select('is_locked')
+        .eq('id', threadId)
+        .single();
+
+      if (parentThread?.is_locked) {
+        return res.status(403).json({
+          success: false,
+          error: 'This thread is locked. No new replies are allowed.',
         });
       }
 

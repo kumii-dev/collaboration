@@ -37,6 +37,7 @@ const updateMemberRoleSchema = z.object({
 const listQuerySchema = z.object({
   limit:  z.string().optional().transform(v => v ? parseInt(v) : 20),
   offset: z.string().optional().transform(v => v ? parseInt(v) : 0),
+  q:      z.string().max(100).optional(),
 });
 
 const sendGroupMessageSchema = z.object({
@@ -127,9 +128,10 @@ router.get('/', authenticate, validateQuery(listQuerySchema), async (req: AuthRe
     const userId = req.user!.id;
     const limit  = Number(req.query.limit)  || 20;
     const offset = Number(req.query.offset) || 0;
+    const q      = req.query.q as string | undefined;
 
     // Groups I'm a member of
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('groups')
       .select(`
         id, name, description, avatar_url, is_locked, max_members, created_at, updated_at,
@@ -140,6 +142,12 @@ router.get('/', authenticate, validateQuery(listQuerySchema), async (req: AuthRe
       .eq('archived', false)
       .order('updated_at', { ascending: false })
       .range(offset, offset + limit - 1);
+
+    if (q) {
+      query = query.or(`name.ilike.%${q}%,description.ilike.%${q}%`);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 

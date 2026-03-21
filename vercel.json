@@ -4,6 +4,12 @@
   "outputDirectory": "apps/web/dist",
   "installCommand": "echo 'Dependencies installed in build.sh'",
   "framework": null,
+  "crons": [
+    {
+      "path": "/api/events/reminders/due",
+      "schedule": "* * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
