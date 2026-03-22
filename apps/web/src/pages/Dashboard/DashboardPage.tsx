@@ -1,6 +1,6 @@
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, ListGroup, Spinner, Button, ProgressBar } from 'react-bootstrap';
-import { FiMessageSquare, FiUsers, FiTrendingUp, FiActivity, FiArrowRight, FiBell, FiUser, FiShield } from 'react-icons/fi';
+import { FiMessageSquare, FiUsers, FiTrendingUp, FiActivity, FiArrowRight, FiBell, FiShield, FiCalendar } from 'react-icons/fi';
 import { BsPeopleFill } from 'react-icons/bs';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -13,6 +13,8 @@ interface DashboardStats {
   total_threads: number;
   total_posts: number;
   reputation_score: number;
+  groups_joined: number;
+  events_rsvpd: number;
   pending_reports?: number;
 }
 
@@ -36,7 +38,7 @@ interface TrendingThread {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { profile, startup } = useKumii();
+  const { profile, startup, role } = useKumii();
 
   // Derived display values from the Lovable profile (falls back gracefully)
   const displayName = profile
@@ -82,7 +84,8 @@ export default function DashboardPage() {
       message: <FiMessageSquare style={{ color: '#7a8567' }} />,
       thread: <FiActivity style={{ color: '#7a8567' }} />,
       post: <FiActivity style={{ color: '#7a8567' }} />,
-      vote: <FiTrendingUp style={{ color: '#7a8567' }} />
+      vote: <FiTrendingUp style={{ color: '#7a8567' }} />,
+      event_rsvp: <FiCalendar style={{ color: '#7a8567' }} />,
     };
     return icons[type] || <FiActivity />;
   };
@@ -146,43 +149,41 @@ export default function DashboardPage() {
 
       {/* ── Hero Navigation Cards ─────────────────────────────────────────── */}
       <Row className="g-3 mb-4">
-        {[
-          {
-            path: '/forum',
-            icon: <BsPeopleFill size={26} />,
-            label: 'Communities',
-            desc: 'Browse forums & join discussions',
-            gradient: 'linear-gradient(135deg,#7a8567,#c5df96)',
-          },
-          {
-            path: '/chat',
-            icon: <FiMessageSquare size={26} />,
-            label: 'Chat',
-            desc: 'Direct & group messaging',
-            gradient: 'linear-gradient(135deg,#6b8f71,#b8d4a8)',
-          },
-          {
-            path: '/notifications',
-            icon: <FiBell size={26} />,
-            label: 'Notifications',
-            desc: 'Alerts, mentions & updates',
-            gradient: 'linear-gradient(135deg,#8a9e76,#c5df96)',
-          },
-          {
-            path: '/profile',
-            icon: <FiUser size={26} />,
-            label: 'My Profile',
-            desc: 'Reputation, bio & settings',
-            gradient: 'linear-gradient(135deg,#7a8567,#a8c490)',
-          },
-          {
-            path: '/moderation',
-            icon: <FiShield size={26} />,
-            label: 'Moderation',
-            desc: 'Reports & community health',
-            gradient: 'linear-gradient(135deg,#5c7a5e,#8fbb91)',
-          },
-        ].map(({ path, icon, label, desc, gradient }) => (
+        {(
+          [
+            {
+              path: '/forum',
+              icon: <BsPeopleFill size={26} />,
+              label: 'Communities',
+              desc: 'Browse forums & join discussions',
+              gradient: 'linear-gradient(135deg,#7a8567,#c5df96)',
+            },
+            {
+              path: '/chat',
+              icon: <FiMessageSquare size={26} />,
+              label: 'Chat',
+              desc: 'Direct & group messaging',
+              gradient: 'linear-gradient(135deg,#6b8f71,#b8d4a8)',
+            },
+            {
+              path: '/notifications',
+              icon: <FiBell size={26} />,
+              label: 'Notifications',
+              desc: 'Alerts, mentions & updates',
+              gradient: 'linear-gradient(135deg,#8a9e76,#c5df96)',
+            },
+            // Moderation: only visible to moderators and admins
+            ...(role === 'moderator' || role === 'admin'
+              ? [{
+                  path: '/moderation',
+                  icon: <FiShield size={26} />,
+                  label: 'Moderation',
+                  desc: 'Reports & community health',
+                  gradient: 'linear-gradient(135deg,#5c7a5e,#8fbb91)',
+                }]
+              : []),
+          ] as Array<{ path: string; icon: JSX.Element; label: string; desc: string; gradient: string }>
+        ).map(({ path, icon, label, desc, gradient }) => (
           <Col key={path} xs={6} md={4} xl={2}>
             <Card
               className="border-0 h-100"
@@ -230,13 +231,13 @@ export default function DashboardPage() {
       {/* ── End Hero Nav Cards ───────────────────────────────────────────── */}
 
       {/* Stats Cards */}
-      <Row className="mb-4">
-        <Col md={3}>
-          <Card className="border-0 shadow-sm">
+      <Row className="mb-4 g-3">
+        <Col xs={6} md={4} lg={2}>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body>
               <div className="d-flex justify-content-between align-items-center">
                 <div>
-                  <div className="text-muted mb-1">Conversations</div>
+                  <div className="text-muted mb-1" style={{ fontSize: '0.8rem' }}>Conversations</div>
                   {loadingStats ? (
                     <Spinner animation="border" size="sm" />
                   ) : (
@@ -244,27 +245,27 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div
-                  className="rounded-circle p-3"
-                  style={{ width: '60px', height: '60px', background: 'rgba(122,133,103,0.1)' }}
+                  className="rounded-circle p-2 d-flex align-items-center justify-content-center"
+                  style={{ width: 46, height: 46, background: 'rgba(122,133,103,0.1)', flexShrink: 0 }}
                 >
-                  <FiMessageSquare size={24} style={{ color: '#7a8567' }} />
+                  <FiMessageSquare size={20} style={{ color: '#7a8567' }} />
                 </div>
               </div>
               {stats && stats.unread_messages > 0 && (
                 <div className="mt-2">
-                  <Badge bg="danger">{stats.unread_messages} unread</Badge>
+                  <Badge bg="danger" style={{ fontSize: '0.72rem' }}>{stats.unread_messages} unread</Badge>
                 </div>
               )}
             </Card.Body>
           </Card>
         </Col>
 
-        <Col md={3}>
-          <Card className="border-0 shadow-sm">
+        <Col xs={6} md={4} lg={2}>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body>
               <div className="d-flex justify-content-between align-items-center">
                 <div>
-                  <div className="text-muted mb-1">Forum Threads</div>
+                  <div className="text-muted mb-1" style={{ fontSize: '0.8rem' }}>Forum Threads</div>
                   {loadingStats ? (
                     <Spinner animation="border" size="sm" />
                   ) : (
@@ -272,22 +273,22 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div
-                  className="rounded-circle p-3"
-                  style={{ width: '60px', height: '60px', background: 'rgba(197,223,150,0.2)' }}
+                  className="rounded-circle p-2 d-flex align-items-center justify-content-center"
+                  style={{ width: 46, height: 46, background: 'rgba(197,223,150,0.2)', flexShrink: 0 }}
                 >
-                  <FiActivity size={24} style={{ color: '#7a8567' }} />
+                  <FiActivity size={20} style={{ color: '#7a8567' }} />
                 </div>
               </div>
             </Card.Body>
           </Card>
         </Col>
 
-        <Col md={3}>
-          <Card className="border-0 shadow-sm">
+        <Col xs={6} md={4} lg={2}>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body>
               <div className="d-flex justify-content-between align-items-center">
                 <div>
-                  <div className="text-muted mb-1">Reputation</div>
+                  <div className="text-muted mb-1" style={{ fontSize: '0.8rem' }}>Reputation</div>
                   {loadingStats ? (
                     <Spinner animation="border" size="sm" />
                   ) : (
@@ -295,22 +296,22 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div
-                  className="rounded-circle p-3"
-                  style={{ width: '60px', height: '60px', background: 'rgba(122,133,103,0.1)' }}
+                  className="rounded-circle p-2 d-flex align-items-center justify-content-center"
+                  style={{ width: 46, height: 46, background: 'rgba(122,133,103,0.1)', flexShrink: 0 }}
                 >
-                  <FiTrendingUp size={24} style={{ color: '#7a8567' }} />
+                  <FiTrendingUp size={20} style={{ color: '#7a8567' }} />
                 </div>
               </div>
             </Card.Body>
           </Card>
         </Col>
 
-        <Col md={3}>
-          <Card className="border-0 shadow-sm">
+        <Col xs={6} md={4} lg={2}>
+          <Card className="border-0 shadow-sm h-100">
             <Card.Body>
               <div className="d-flex justify-content-between align-items-center">
                 <div>
-                  <div className="text-muted mb-1">Total Posts</div>
+                  <div className="text-muted mb-1" style={{ fontSize: '0.8rem' }}>Total Posts</div>
                   {loadingStats ? (
                     <Spinner animation="border" size="sm" />
                   ) : (
@@ -318,17 +319,64 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div
-                  className="rounded-circle p-3"
-                  style={{ width: '60px', height: '60px', background: 'rgba(197,223,150,0.2)' }}
+                  className="rounded-circle p-2 d-flex align-items-center justify-content-center"
+                  style={{ width: 46, height: 46, background: 'rgba(197,223,150,0.2)', flexShrink: 0 }}
                 >
-                  <FiUsers size={24} style={{ color: '#7a8567' }} />
+                  <FiUsers size={20} style={{ color: '#7a8567' }} />
                 </div>
               </div>
-              {stats && stats.pending_reports && stats.pending_reports > 0 && (
+              {/* Pending reports badge — mods/admins only */}
+              {(role === 'moderator' || role === 'admin') && stats && stats.pending_reports && stats.pending_reports > 0 && (
                 <div className="mt-2">
-                  <Badge bg="danger">{stats.pending_reports} reports pending</Badge>
+                  <Badge bg="danger" style={{ fontSize: '0.72rem' }}>{stats.pending_reports} reports pending</Badge>
                 </div>
               )}
+            </Card.Body>
+          </Card>
+        </Col>
+
+        <Col xs={6} md={4} lg={2}>
+          <Card className="border-0 shadow-sm h-100">
+            <Card.Body>
+              <div className="d-flex justify-content-between align-items-center">
+                <div>
+                  <div className="text-muted mb-1" style={{ fontSize: '0.8rem' }}>Groups Joined</div>
+                  {loadingStats ? (
+                    <Spinner animation="border" size="sm" />
+                  ) : (
+                    <h3 className="mb-0">{stats?.groups_joined || 0}</h3>
+                  )}
+                </div>
+                <div
+                  className="rounded-circle p-2 d-flex align-items-center justify-content-center"
+                  style={{ width: 46, height: 46, background: 'rgba(122,133,103,0.1)', flexShrink: 0 }}
+                >
+                  <FiUsers size={20} style={{ color: '#7a8567' }} />
+                </div>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        <Col xs={6} md={4} lg={2}>
+          <Card className="border-0 shadow-sm h-100">
+            <Card.Body>
+              <div className="d-flex justify-content-between align-items-center">
+                <div>
+                  <div className="text-muted mb-1" style={{ fontSize: '0.8rem' }}>Events RSVPd</div>
+                  {loadingStats ? (
+                    <Spinner animation="border" size="sm" />
+                  ) : (
+                    <h3 className="mb-0">{stats?.events_rsvpd || 0}</h3>
+                  )}
+                </div>
+                <div
+                  className="rounded-circle p-2 d-flex align-items-center justify-content-center"
+                  style={{ width: 46, height: 46, background: 'rgba(197,223,150,0.2)', flexShrink: 0 }}
+                >
+                  <FiCalendar size={20} style={{ color: '#7a8567' }} />
+                </div>
+              </div>
             </Card.Body>
           </Card>
         </Col>
@@ -344,7 +392,7 @@ export default function DashboardPage() {
                 <Button
                   variant="link"
                   size="sm"
-                  onClick={() => navigate('/profile')}
+                  onClick={() => navigate('/forum')}
                   className="text-decoration-none"
                 >
                   View All <FiArrowRight />

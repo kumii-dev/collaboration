@@ -7,6 +7,7 @@ import {
   KumiiContext,
   KumiiProfile,
   KumiiStartup,
+  UserRole,
   saveKumiiProfile,
   loadKumiiProfile,
 } from './lib/KumiiContext';
@@ -24,7 +25,6 @@ import CategoryDetailPage from './pages/Forum/CategoryDetailPage';
 import NewThreadPage from './pages/Forum/NewThreadPage';
 import ThreadDetailPage from './pages/Forum/ThreadDetailPage';
 import ModerationPage from './pages/Moderation/ModerationPage';
-import ProfilePage from './pages/Profile/ProfilePage';
 import NotificationsPage from './pages/Notifications/NotificationsPage';
 
 const queryClient = new QueryClient({
@@ -83,6 +83,7 @@ function App() {
   const cached = loadKumiiProfile();
   const [kumiiProfile, setKumiiProfile] = useState<KumiiProfile | null>(cached.profile);
   const [kumiiStartup, setKumiiStartup] = useState<KumiiStartup | null>(cached.startup);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
     // ── Message handler — registered via messageBuffer so messages that
@@ -242,6 +243,20 @@ function App() {
     };
   }, []);
 
+  // Fetch the user's platform role once a session is established.
+  // /api/auth/me is cheap (cached in the API via the profiles table).
+  useEffect(() => {
+    if (!session) return;
+    fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.profile?.role) setUserRole(data.profile.role as UserRole);
+      })
+      .catch(() => { /* non-fatal — role stays null, gated items stay hidden */ });
+  }, [session]);
+
   if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center vh-100" style={{ background: '#F5F5F3' }}>
@@ -324,7 +339,7 @@ function App() {
   }
 
   return (
-    <KumiiContext.Provider value={{ profile: kumiiProfile, startup: kumiiStartup }}>
+    <KumiiContext.Provider value={{ profile: kumiiProfile, startup: kumiiStartup, role: userRole }}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
@@ -348,7 +363,6 @@ function App() {
               <Route path="forum/new-thread" element={<NewThreadPage />} />
               <Route path="forum/threads/:threadId" element={<ThreadDetailPage />} />
               <Route path="moderation" element={<ModerationPage />} />
-              <Route path="profile" element={<ProfilePage />} />
               <Route path="notifications" element={<NotificationsPage />} />
             </Route>
           </Routes>

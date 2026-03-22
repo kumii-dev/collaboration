@@ -34,14 +34,20 @@ export interface KumiiStartup {
   challenges: string | null;
 }
 
+// Role as stored in this platform's profiles table
+export type UserRole = 'user' | 'moderator' | 'admin';
+
 export interface KumiiContextValue {
   profile: KumiiProfile | null;
   startup: KumiiStartup | null;
+  /** Role within the collaboration platform (from /api/auth/me). null = not yet loaded. */
+  role: UserRole | null;
 }
 
 export const KumiiContext = createContext<KumiiContextValue>({
   profile: null,
   startup: null,
+  role: null,
 });
 
 export function useKumii() {
@@ -73,3 +79,4 @@ export function loadKumiiProfile(): { profile: KumiiProfile | null; startup: Kum
     return { profile: null, startup: null };
   }
 }
+
