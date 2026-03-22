@@ -179,10 +179,21 @@ router.post('/exchange', async (req: Request, res: Response) => {
       if (lovablePhone    !== undefined) profileSync.phone      = lovablePhone;
       if (lovableVerified !== undefined) profileSync.verified   = lovableVerified;
 
+      // ── Admin bootstrap via ADMIN_EMAILS env var ─────────────────────────
+      // Comma-separated list of email addresses that should always be 'admin'.
+      // Example: ADMIN_EMAILS=alice@example.com,bob@example.com
+      // On every login, if the user's email is in this list their role is
+      // promoted to 'admin' regardless of the current DB value.
+      const adminEmails = (process.env.ADMIN_EMAILS ?? '')
+        .split(',')
+        .map(e => e.trim().toLowerCase())
+        .filter(Boolean);
+      const shouldBeAdmin = adminEmails.includes(email.toLowerCase());
+
       if (!existingUser) {
-        // New user — also set the default role on first insert
+        // New user — set default role, or admin if bootstrapped
         profileSync.id   = provisionedUserId;
-        profileSync.role = 'entrepreneur';
+        profileSync.role = shouldBeAdmin ? 'admin' : 'entrepreneur';
 
         const { error: insertErr } = await supabaseAdmin
           .from('profiles')
@@ -193,7 +204,10 @@ router.post('/exchange', async (req: Request, res: Response) => {
         }
       } else {
         // Returning user — always overwrite with Lovable's latest data.
-        // Role is excluded from profileSync above, so it is safe to UPDATE directly.
+        // Role is normally excluded, but if this email is in ADMIN_EMAILS
+        // we ensure they have admin role (handles bootstrapping existing users).
+        if (shouldBeAdmin) profileSync.role = 'admin';
+
         const { error: updateErr } = await supabaseAdmin
           .from('profiles')
           .update(profileSync)
@@ -557,6 +571,11 @@ router.post('/refresh', async (req: Request, res: Response) => {
         }
         if (typeof lovableMeta.verified === 'boolean')       profileSync.verified = lovableMeta.verified;
         else if (typeof lovableMeta.email_verified === 'boolean') profileSync.verified = lovableMeta.email_verified;
+
+        // Admin bootstrap — same ADMIN_EMAILS check as /exchange
+        const adminEmails = (process.env.ADMIN_EMAILS ?? '')
+          .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+        if (adminEmails.includes(email.toLowerCase())) profileSync.role = 'admin';
 
         await supabaseAdmin.from('profiles').update(profileSync).eq('id', userId);
       } catch { /* non-fatal */ }

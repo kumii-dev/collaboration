@@ -8,13 +8,16 @@ import {
   HiOutlineBriefcase,
   HiOutlineSupport,
   HiOutlineDotsHorizontal,
-  HiOutlineSearch
+  HiOutlineSearch,
+  HiOutlineShieldCheck
 } from 'react-icons/hi';
 import { MdOutlineGridView } from 'react-icons/md';
 import { AiOutlineLineChart } from 'react-icons/ai';
 import { IoTrendingUpOutline } from 'react-icons/io5';
+import { useKumii } from '../lib/KumiiContext';
 
 export default function Sidebar() {
+  const { role } = useKumii();
   const sidebarIcons = [
     { path: '/dashboard', icon: <HiOutlineHome size={20} />, label: 'Home' },
     { path: '/activity', icon: <AiOutlineLineChart size={20} />, label: 'Activity', badge: 3 },
@@ -115,6 +118,21 @@ export default function Sidebar() {
             ))}
           </div>
         </div>
+
+        {/* Admin Section — visible to admins only */}
+        {role === 'admin' && (
+          <div className="sidebar-section">
+            <h3 className="sidebar-section-title">Administration</h3>
+            <div className="sidebar-menu">
+              <Link to="/admin/users" className="sidebar-menu-item">
+                <div className="menu-item-icon">
+                  <HiOutlineShieldCheck />
+                </div>
+                <span>User Management</span>
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

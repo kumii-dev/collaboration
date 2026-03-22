@@ -34,8 +34,8 @@ export interface KumiiStartup {
   challenges: string | null;
 }
 
-// Role as stored in this platform's profiles table
-export type UserRole = 'user' | 'moderator' | 'admin';
+// Role as stored in this platform's profiles table (matches user_role DB enum)
+export type UserRole = 'entrepreneur' | 'funder' | 'advisor' | 'moderator' | 'admin';
 
 export interface KumiiContextValue {
   profile: KumiiProfile | null;

@@ -27,6 +27,7 @@ import ThreadDetailPage from './pages/Forum/ThreadDetailPage';
 import ModerationPage from './pages/Moderation/ModerationPage';
 import NotificationsPage from './pages/Notifications/NotificationsPage';
 import EventsPage from './pages/Events/EventsPage';
+import AdminUsersPage from './pages/Admin/AdminUsersPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -366,6 +367,7 @@ function App() {
               <Route path="moderation" element={<ModerationPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="events" element={<EventsPage />} />
+              <Route path="admin/users" element={<AdminUsersPage />} />
             </Route>
           </Routes>
         </BrowserRouter>
