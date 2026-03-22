@@ -89,6 +89,11 @@ export default function EventCard({ event, onRsvpChange, onViewDetails }: Props)
         {/* Badges row */}
         <div className="d-flex justify-content-between align-items-start mb-2">
           <div className="d-flex gap-1 flex-wrap">
+            {event.is_featured && (
+              <Badge style={{ background: 'linear-gradient(135deg,#7a8567,#c5df96)', fontSize: '0.68rem' }}>
+                ⭐ Featured
+              </Badge>
+            )}
             {event.is_online && (
               <Badge style={{ background: '#7a8567', fontSize: '0.68rem' }}>
                 <BsCameraVideo className="me-1" />Online

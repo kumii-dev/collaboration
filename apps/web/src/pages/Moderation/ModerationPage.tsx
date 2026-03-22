@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { Card, Row, Col, Badge, Button, Table, Form, Spinner, Tabs, Tab, Alert } from 'react-bootstrap';
-import { FiAlertCircle, FiCheck, FiX, FiEye, FiShield } from 'react-icons/fi';
+import { FiAlertCircle, FiCheck, FiX, FiEye, FiShield, FiCalendar } from 'react-icons/fi';
 import { format } from 'date-fns';
 import api from '../../lib/api';
+import { eventsApi, CommunityEvent } from '../../lib/eventsApi';
 
 interface Report {
   id: string;
@@ -78,6 +79,22 @@ export default function ModerationPage() {
         params: { limit: 100 }
       });
       return response.data.data as AuditLog[];
+    }
+  );
+
+  // Fetch all upcoming events for feature management (admin)
+  const { data: allEvents, isLoading: loadingEvents } = useQuery<CommunityEvent[]>(
+    'admin-all-events',
+    () => eventsApi.list(),
+    { staleTime: 60 * 1000 }
+  );
+
+  // Feature toggle mutation
+  const featureMutation = useMutation(
+    ({ eventId, featured }: { eventId: string; featured: boolean }) =>
+      eventsApi.feature(eventId, featured),
+    {
+      onSuccess: () => queryClient.invalidateQueries('admin-all-events'),
     }
   );
 
@@ -451,6 +468,74 @@ export default function ModerationPage() {
           {auditLogs && auditLogs.length === 0 && (
             <Alert variant="info">No audit logs available.</Alert>
           )}
+        </Tab>
+
+        {/* ── Events Feature Management Tab ────────────────────────────────── */}
+        <Tab eventKey="events" title={<><FiCalendar className="me-1" />Events</>}>
+          <Card style={{ border: '1px solid #E5E5E3', borderRadius: '0 0 12px 12px' }}>
+            <Card.Body>
+              <h5 className="mb-1" style={{ fontWeight: 700 }}>Event Feature Management</h5>
+              <p className="text-muted mb-3" style={{ fontSize: '0.875rem' }}>
+                Toggle the <strong>⭐ Featured</strong> tag on upcoming events. Featured events appear on the Communities landing page.
+              </p>
+              {loadingEvents ? (
+                <div className="text-center py-4"><Spinner animation="border" /></div>
+              ) : allEvents && allEvents.length > 0 ? (
+                <Table hover responsive className="mb-0">
+                  <thead style={{ background: '#f8f9fa' }}>
+                    <tr>
+                      <th>Event</th>
+                      <th>Date</th>
+                      <th>Category</th>
+                      <th className="text-center">Featured</th>
+                      <th className="text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allEvents.map((event) => (
+                      <tr key={event.id}>
+                        <td>
+                          <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{event.title}</div>
+                          {event.is_cancelled && <Badge bg="secondary" className="ms-1">Cancelled</Badge>}
+                        </td>
+                        <td style={{ fontSize: '0.875rem', color: '#555' }}>
+                          {format(new Date(event.starts_at), 'MMM d, yyyy HH:mm')}
+                        </td>
+                        <td style={{ fontSize: '0.875rem' }}>
+                          {event.forum_categories?.name ?? '—'}
+                        </td>
+                        <td className="text-center">
+                          {event.is_featured
+                            ? <Badge style={{ background: 'linear-gradient(135deg,#7a8567,#c5df96)' }}>⭐ Featured</Badge>
+                            : <Badge bg="light" text="secondary">—</Badge>}
+                        </td>
+                        <td className="text-center">
+                          <Button
+                            size="sm"
+                            disabled={featureMutation.isLoading}
+                            style={{
+                              borderRadius: '20px',
+                              background: event.is_featured ? '#E5E5E3' : 'linear-gradient(135deg,#7a8567,#c5df96)',
+                              border: 'none',
+                              color: event.is_featured ? '#555' : '#fff',
+                              fontWeight: 600,
+                              fontSize: '0.75rem',
+                              padding: '4px 14px',
+                            }}
+                            onClick={() => featureMutation.mutate({ eventId: event.id, featured: !event.is_featured })}
+                          >
+                            {event.is_featured ? 'Unfeature' : '⭐ Feature'}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              ) : (
+                <Alert variant="info">No upcoming events found.</Alert>
+              )}
+            </Card.Body>
+          </Card>
         </Tab>
       </Tabs>
     </div>

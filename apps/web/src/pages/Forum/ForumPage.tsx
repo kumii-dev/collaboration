@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, Button, Spinner, Form, InputGroup } from 'react-bootstrap';
-import { FiMessageSquare, FiStar, FiSearch, FiArrowRight, FiUsers, FiEye, FiDollarSign } from 'react-icons/fi';
+import { FiMessageSquare, FiStar, FiSearch, FiArrowRight, FiUsers, FiCalendar } from 'react-icons/fi';
 import { BsLightbulb, BsBarChartFill, BsBullseye, BsRocket, BsFolder } from 'react-icons/bs';
-import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
+import { eventsApi, CommunityEvent } from '../../lib/eventsApi';
+import EventCard from '../../components/events/EventCard';
+import EventDetailModal from '../../components/events/EventDetailModal';
 
 interface Category {
   id: string;
@@ -37,6 +39,7 @@ interface Thread {
 export default function ForumPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [selectedEvent, setSelectedEvent] = useState<CommunityEvent | null>(null);
   const navigate = useNavigate();
 
   // Fetch categories
@@ -70,10 +73,17 @@ export default function ForumPage() {
     }
   );
 
+  // Fetch featured events
+  const { data: featuredEvents, isLoading: loadingFeatured } = useQuery(
+    'featured-events',
+    () => eventsApi.listFeatured(6),
+    { staleTime: 2 * 60 * 1000 }
+  );
+
   const getCategoryColor = (index: number) => {
     const colors = [
       { bg: '#7a8567', IconComponent: FiMessageSquare },
-      { bg: '#c5df96', IconComponent: FiDollarSign },
+      { bg: '#c5df96', IconComponent: FiUsers },
       { bg: '#7a8567', IconComponent: BsLightbulb },
       { bg: '#7a8567', IconComponent: BsBarChartFill },
       { bg: '#c5df96', IconComponent: BsBullseye },
@@ -85,8 +95,10 @@ export default function ForumPage() {
   const displayThreads = activeFilter === 'trending' ? trendingThreads : 
                         activeFilter === 'recent' ? recentThreads : trendingThreads;
   const isLoading = activeFilter === 'trending' ? loadingTrending : false;
+  void isLoading; // used below for filter tabs
 
   return (
+    <>
     <div style={{ background: '#F5F5F3', minHeight: 'calc(100vh - 100px)', padding: '2rem 0' }}>
       {/* Header Section */}
       <div className="container">
@@ -296,181 +308,54 @@ export default function ForumPage() {
           )}
         </Row>
 
-        {/* Featured Discussions Section */}
+        {/* Featured Events Section */}
         <div className="d-flex justify-content-between align-items-center mb-4">
           <h3 style={{ fontWeight: '600', fontSize: '1.5rem', marginBottom: 0 }}>
-            Featured Discussions
+            <FiCalendar className="me-2" style={{ color: '#7a8567' }} />
+            Featured Events
           </h3>
-          <Button 
-            variant="success" 
+          <Button
+            variant="success"
             style={{ borderRadius: '20px', background: '#7a8567', borderColor: '#7a8567' }}
-            onClick={() => setActiveFilter('all')}
+            onClick={() => navigate('/events')}
           >
             View All <FiArrowRight className="ms-1" />
           </Button>
         </div>
 
-        {/* Discussion Cards */}
-        {isLoading ? (
+        {loadingFeatured ? (
           <div className="text-center py-5">
             <Spinner animation="border" />
           </div>
-        ) : (
+        ) : featuredEvents && featuredEvents.length > 0 ? (
           <Row>
-            {displayThreads?.slice(0, 6).map((thread) => (
-              <Col md={6} lg={4} key={thread.id} className="mb-4">
-                <Card 
-                  className="h-100" 
-                  style={{ 
-                    cursor: 'pointer',
-                    border: '1px solid #E5E5E3',
-                    borderRadius: '12px',
-                    transition: 'all 0.2s'
+            {featuredEvents.map(event => (
+              <Col md={6} lg={4} key={event.id} className="mb-4">
+                <EventCard
+                  event={event}
+                  onRsvpChange={(_id, _status, _counts) => {
+                    // optimistic update handled inside EventCard
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                    e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                  onClick={() => navigate(`/forum/threads/${thread.id}`)}
-                >
-                  <Card.Body>
-                    {/* Header with Icon and Badge */}
-                    <div className="d-flex justify-content-between align-items-start mb-3">
-                      <div 
-                        style={{
-                          width: '48px',
-                          height: '48px',
-                          borderRadius: '12px',
-                          background: '#7a8567',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'white',
-                          fontSize: '20px'
-                        }}
-                      >
-                        <FiMessageSquare />
-                      </div>
-                      <Badge 
-                        bg="dark" 
-                        style={{ 
-                          borderRadius: '12px',
-                          padding: '4px 12px',
-                          fontWeight: '500',
-                          fontSize: '11px'
-                        }}
-                      >
-                        Discussion
-                      </Badge>
-                    </div>
-
-                    {/* Title */}
-                    <h5 
-                      className="mb-2" 
-                      style={{ 
-                        fontSize: '1.1rem',
-                        fontWeight: '600',
-                        color: '#2D2D2D',
-                        lineHeight: '1.4'
-                      }}
-                    >
-                      {thread.title}
-                    </h5>
-
-                    {/* Board Badge */}
-                    <div className="mb-3">
-                      <Badge bg="light" text="dark" style={{ fontWeight: '500', fontSize: '12px' }}>
-                        Board: {thread.board_name}
-                      </Badge>
-                    </div>
-
-                    {/* Description */}
-                    <p 
-                      className="text-muted mb-3" 
-                      style={{ 
-                        fontSize: '14px',
-                        lineHeight: '1.6',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      {thread.content_preview || 'Click to read the full discussion and join the conversation...'}
-                    </p>
-
-                    {/* Stats */}
-                    <div className="mb-3">
-                      <Row>
-                        <Col xs={6}>
-                          <div style={{ fontSize: '13px', color: '#666666' }}>
-                            <strong style={{ color: '#7a8567', fontSize: '16px' }}>
-                              {thread.vote_score > 0 ? `+${thread.vote_score}` : thread.vote_score}
-                            </strong>
-                            <div>Votes</div>
-                          </div>
-                        </Col>
-                        <Col xs={6}>
-                          <div style={{ fontSize: '13px', color: '#666666' }}>
-                            <strong style={{ fontSize: '16px', color: '#2D2D2D' }}>
-                              {thread.reply_count}
-                            </strong>
-                            <div>Replies</div>
-                          </div>
-                        </Col>
-                      </Row>
-                    </div>
-
-                    {/* Metadata */}
-                    <div 
-                      className="pt-3" 
-                      style={{ 
-                        borderTop: '1px solid #E5E5E3',
-                        fontSize: '13px',
-                        color: '#666666'
-                      }}
-                    >
-                      <div className="d-flex justify-content-between align-items-center">
-                        <span>By: <strong>{thread.author_name}</strong></span>
-                        <div className="d-flex align-items-center gap-2">
-                          <FiEye size={14} />
-                          <span>{thread.view_count}</span>
-                        </div>
-                      </div>
-                      <div className="mt-1">
-                        Posted: {format(new Date(thread.created_at), 'MMM d, yyyy')}
-                      </div>
-                    </div>
-
-                    {/* Apply Button */}
-                    <Button 
-                      variant="success" 
-                      className="w-100 mt-3"
-                      style={{
-                        borderRadius: '8px',
-                        padding: '10px',
-                        fontWeight: '600',
-                        background: 'linear-gradient(135deg, #7a8567 0%, #c5df96 100%)',
-                        borderColor: '#7a8567',
-                        color: 'white'
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/forum/threads/${thread.id}`);
-                      }}
-                    >
-                      <FiArrowRight className="me-2" />
-                      Join Discussion
-                    </Button>
-                  </Card.Body>
-                </Card>
+                  onViewDetails={setSelectedEvent}
+                />
               </Col>
             ))}
           </Row>
+        ) : (
+          <Card style={{ border: '2px dashed #E5E5E3', borderRadius: '12px', background: '#F5F5F3' }}>
+            <Card.Body className="text-center py-5">
+              <FiCalendar size={48} color="#7a8567" style={{ marginBottom: '1rem' }} />
+              <h5 className="mb-2">No Featured Events</h5>
+              <p className="text-muted mb-3">Admins can mark upcoming events as featured to showcase them here.</p>
+              <Button
+                variant="success"
+                onClick={() => navigate('/events')}
+                style={{ borderRadius: '20px', background: '#7a8567', borderColor: '#7a8567' }}
+              >
+                Browse All Events
+              </Button>
+            </Card.Body>
+          </Card>
         )}
 
         {/* Stats Section */}
@@ -508,5 +393,15 @@ export default function ForumPage() {
         </Row>
       </div>
     </div>
+
+    <EventDetailModal
+      event={selectedEvent}
+      show={selectedEvent !== null}
+      onHide={() => setSelectedEvent(null)}
+      onRsvpChange={(_id, _status, counts) => {
+        setSelectedEvent(prev => prev ? { ...prev, rsvp_counts: counts } : null);
+      }}
+    />
+  </>
   );
 }

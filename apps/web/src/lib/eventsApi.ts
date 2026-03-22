@@ -19,6 +19,7 @@ export interface CommunityEvent {
   max_attendees?: number;
   is_online: boolean;
   is_cancelled: boolean;
+  is_featured: boolean;
   created_by: string;
   created_at: string;
   forum_categories?: { id: string; name: string; slug?: string };
@@ -74,5 +75,14 @@ export const eventsApi = {
 
   cancel: async (eventId: string): Promise<void> => {
     await api.delete(`/events/${eventId}`);
+  },
+
+  listFeatured: async (limit = 6): Promise<CommunityEvent[]> => {
+    const { data } = await api.get('/events/featured', { params: { limit } });
+    return data.data;
+  },
+
+  feature: async (eventId: string, featured: boolean): Promise<void> => {
+    await api.patch(`/events/${eventId}/feature`, { featured });
   },
 };

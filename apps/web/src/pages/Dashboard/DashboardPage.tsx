@@ -155,7 +155,7 @@ export default function DashboardPage() {
               path: '/forum',
               icon: <BsPeopleFill size={26} />,
               label: 'Communities',
-              desc: 'Browse forums & join discussions',
+              desc: 'Browse Communities & join discussions',
               gradient: 'linear-gradient(135deg,#7a8567,#c5df96)',
             },
             {
@@ -513,7 +513,7 @@ export default function DashboardPage() {
                     <FiMessageSquare className="me-1" /> New Chat
                   </Button>
                   <Button variant="outline-light" onClick={() => navigate('/forum')}>
-                    <FiActivity className="me-1" /> Browse Forum
+                    <FiActivity className="me-1" /> Browse Categories
                   </Button>
                 </Col>
               </Row>
