@@ -254,7 +254,9 @@ function App() {
     })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data?.profile?.role) setUserRole(data.profile.role as UserRole);
+        // /api/auth/me returns { success: true, data: { role, ... } }
+        const role = data?.data?.role ?? data?.profile?.role;
+        if (role) setUserRole(role as UserRole);
       })
       .catch(() => { /* non-fatal — role stays null, gated items stay hidden */ });
   }, [session]);
