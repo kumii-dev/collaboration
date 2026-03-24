@@ -99,7 +99,14 @@ router.get('/featured', authenticate, async (req: AuthRequest, res) => {
       .gte('starts_at', new Date().toISOString())
       .order('starts_at', { ascending: true })
       .limit(limit);
-    if (error) throw error;
+    if (error) {
+      // If is_featured column doesn't exist yet (migration not run), return empty gracefully
+      if (error.message?.includes('is_featured') || error.code === '42703') {
+        logger.warn('GET /events/featured: is_featured column missing — run migration 009_featured_events.sql');
+        return res.json({ success: true, data: [] });
+      }
+      throw error;
+    }
     res.json({ success: true, data: (data ?? []).map(e => mapEvent(e, userId)) });
   } catch (err: any) {
     logger.error('GET /events/featured', err);

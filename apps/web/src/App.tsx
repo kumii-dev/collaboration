@@ -79,6 +79,8 @@ function App() {
   // Refs to the active ping interval + fallback timer so "Try again" can restart them
   const activeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track whether role was already set by the exchange path to avoid stale-closure issue
+  const roleSetByExchangeRef = useRef(false);
 
   // Pre-seed from localStorage so profile is available immediately on
   // subsequent navigations within the same iframe session.
@@ -174,6 +176,7 @@ function App() {
               if (exchanged.role) {
                 console.log('[Kumii] Role from exchange response:', exchanged.role);
                 setUserRole(exchanged.role as UserRole);
+                roleSetByExchangeRef.current = true;
               }
 
               const { data: exchData, error: exchError } = await supabase.auth.setSession({
@@ -303,11 +306,11 @@ function App() {
   }, []);
 
   // Fetch role when a session arrives via getSession() or onAuthStateChange
-  // (i.e. returning users / standalone mode). The exchange path calls
-  // fetchAndSetRole() directly, so we skip if a role is already set.
+  // (i.e. returning users / standalone mode). Skip if the exchange path already
+  // set the role — use a ref to avoid stale closure on userRole state.
   useEffect(() => {
     if (!session) return;
-    if (userRole) return; // already set via exchange path — don't clobber it
+    if (roleSetByExchangeRef.current) return; // exchange already handled it
     console.log('[Kumii] Session via getSession/onAuthStateChange — fetching role', {
       userId: session.user?.id,
       email: session.user?.email,
