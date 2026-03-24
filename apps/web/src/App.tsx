@@ -87,6 +87,26 @@ function App() {
   const [kumiiStartup, setKumiiStartup] = useState<KumiiStartup | null>(cached.startup);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
 
+  // Stable helper — fetch role from /api/auth/me using a specific token.
+  // Called directly after exchange (avoids race with onAuthStateChange).
+  const fetchAndSetRole = (token: string) => {
+    console.log('[Kumii] fetchAndSetRole called with token prefix:', token.slice(0, 20) + '…');
+    fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => {
+        console.log('[Kumii] /api/auth/me status:', r.status);
+        return r.ok ? r.json() : r.json().then(err => { console.error('[Kumii] /api/auth/me error body:', err); return null; });
+      })
+      .then(data => {
+        console.log('[Kumii] /api/auth/me full response:', JSON.stringify(data));
+        const role = data?.data?.role ?? data?.profile?.role;
+        console.log('[Kumii] Resolved role:', role);
+        if (role) setUserRole(role as UserRole);
+      })
+      .catch(err => console.error('[Kumii] /api/auth/me fetch error:', err));
+  };
+
   useEffect(() => {
     // ── Message handler — registered via messageBuffer so messages that
     // arrived before React mounted are replayed immediately. This eliminates
@@ -120,6 +140,7 @@ function App() {
 
         if (!error && data.session) {
           setSession(data.session);
+          fetchAndSetRole(data.session.access_token);
           setLoading(false);
           if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
           if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
@@ -154,6 +175,20 @@ function App() {
                 console.log('[Kumii] Token exchange succeeded — user provisioned in this project');
                 exchangeInProgressRef.current = false;
                 setSession(exchData.session);
+                setLoading(false);
+                // Fetch role immediately with the fresh token — don't wait for
+                // the useEffect([session]) which may fire with a stale token first.
+                fetchAndSetRole(exchData.session.access_token);
+                if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+                if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
+                return;
+              }
+              // setSession failed but we still have a valid exchange token —
+              // try fetching the role directly from the exchanged access_token.
+              if (exchanged.access_token) {
+                console.warn('[Kumii] setSession after exchange failed:', exchError?.message, '— using exchange token directly');
+                exchangeInProgressRef.current = false;
+                fetchAndSetRole(exchanged.access_token);
                 setLoading(false);
                 if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
                 if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
@@ -263,30 +298,18 @@ function App() {
     };
   }, []);
 
-  // Fetch the user's platform role once a session is established.
-  // /api/auth/me is cheap (cached in the API via the profiles table).
+  // Fetch role when a session arrives via getSession() or onAuthStateChange
+  // (i.e. returning users / standalone mode). The exchange path calls
+  // fetchAndSetRole() directly, so we skip if a role is already set.
   useEffect(() => {
     if (!session) return;
-    console.log('[Kumii] Session established — fetching role from /api/auth/me', {
+    if (userRole) return; // already set via exchange path — don't clobber it
+    console.log('[Kumii] Session via getSession/onAuthStateChange — fetching role', {
       userId: session.user?.id,
       email: session.user?.email,
     });
-    fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    })
-      .then(r => {
-        console.log('[Kumii] /api/auth/me status:', r.status);
-        return r.ok ? r.json() : r.json().then(err => { console.error('[Kumii] /api/auth/me error body:', err); return null; });
-      })
-      .then(data => {
-        console.log('[Kumii] /api/auth/me response:', JSON.stringify(data));
-        // /api/auth/me returns { success: true, data: { role, ... } }
-        const role = data?.data?.role ?? data?.profile?.role;
-        console.log('[Kumii] Resolved role:', role);
-        if (role) setUserRole(role as UserRole);
-      })
-      .catch(err => { console.error('[Kumii] /api/auth/me fetch failed:', err); });
-  }, [session]);
+    fetchAndSetRole(session.access_token);
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
