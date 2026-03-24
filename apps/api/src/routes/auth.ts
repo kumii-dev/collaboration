@@ -190,6 +190,13 @@ router.post('/exchange', async (req: Request, res: Response) => {
         .filter(Boolean);
       const shouldBeAdmin = adminEmails.includes(email.toLowerCase());
 
+      console.log('[auth/exchange] Admin check:', {
+        email,
+        adminEmails,
+        shouldBeAdmin,
+        isNewUser: !existingUser,
+      });
+
       if (!existingUser) {
         // New user — set default role, or admin if bootstrapped
         profileSync.id   = provisionedUserId;
@@ -198,6 +205,8 @@ router.post('/exchange', async (req: Request, res: Response) => {
         const { error: insertErr } = await supabaseAdmin
           .from('profiles')
           .upsert(profileSync, { onConflict: 'id', ignoreDuplicates: false });
+
+        console.log('[auth/exchange] New user profile upsert:', { role: profileSync.role, error: insertErr?.message ?? null });
 
         if (insertErr) {
           console.error('[auth/exchange] profile insert error:', insertErr.message);
@@ -212,6 +221,8 @@ router.post('/exchange', async (req: Request, res: Response) => {
           .from('profiles')
           .update(profileSync)
           .eq('id', provisionedUserId);
+
+        console.log('[auth/exchange] Returning user profile update:', { role: profileSync.role ?? '(unchanged)', error: updateErr?.message ?? null });
 
         if (updateErr) {
           console.error('[auth/exchange] profile update error:', updateErr.message);

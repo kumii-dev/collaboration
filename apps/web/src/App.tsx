@@ -98,6 +98,19 @@ function App() {
 
       // ── KUMII_SESSION: inject the Supabase session ────────────────────────
       if (type === 'KUMII_SESSION' && access_token) {
+        // Log the decoded JWT payload so we can verify email is present
+        try {
+          const parts = access_token.split('.');
+          const jwtPayload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+          console.log('[Kumii] KUMII_SESSION received — JWT payload:', {
+            email: jwtPayload.email,
+            sub: jwtPayload.sub,
+            exp: jwtPayload.exp ? new Date(jwtPayload.exp * 1000).toISOString() : null,
+            hasRefreshToken: !!refresh_token,
+          });
+        } catch (e) {
+          console.warn('[Kumii] Could not decode JWT payload:', e);
+        }
         // First try setSession directly — works when both apps share the same
         // Supabase project. refresh_token may be absent if Lovable sends only
         // the access_token; exchange endpoint only needs access_token anyway.
@@ -128,6 +141,11 @@ function App() {
             });
             if (resp.ok) {
               const exchanged = await resp.json();
+              console.log('[Kumii] /exchange response:', {
+                hasAccessToken: !!exchanged.access_token,
+                hasRefreshToken: !!exchanged.refresh_token,
+                user: exchanged.user,
+              });
               const { data: exchData, error: exchError } = await supabase.auth.setSession({
                 access_token: exchanged.access_token,
                 refresh_token: exchanged.refresh_token,
@@ -249,16 +267,25 @@ function App() {
   // /api/auth/me is cheap (cached in the API via the profiles table).
   useEffect(() => {
     if (!session) return;
+    console.log('[Kumii] Session established — fetching role from /api/auth/me', {
+      userId: session.user?.id,
+      email: session.user?.email,
+    });
     fetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
-      .then(r => r.ok ? r.json() : null)
+      .then(r => {
+        console.log('[Kumii] /api/auth/me status:', r.status);
+        return r.ok ? r.json() : r.json().then(err => { console.error('[Kumii] /api/auth/me error body:', err); return null; });
+      })
       .then(data => {
+        console.log('[Kumii] /api/auth/me response:', JSON.stringify(data));
         // /api/auth/me returns { success: true, data: { role, ... } }
         const role = data?.data?.role ?? data?.profile?.role;
+        console.log('[Kumii] Resolved role:', role);
         if (role) setUserRole(role as UserRole);
       })
-      .catch(() => { /* non-fatal — role stays null, gated items stay hidden */ });
+      .catch(err => { console.error('[Kumii] /api/auth/me fetch failed:', err); });
   }, [session]);
 
   if (loading) {
