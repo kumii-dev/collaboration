@@ -263,6 +263,19 @@ router.post('/exchange', async (req: Request, res: Response) => {
 
     console.log(`[auth/exchange] ✅ Session issued for ${email}`);
 
+    // Read the final role from DB so we can return it to the frontend.
+    // This avoids a second /api/auth/me round-trip and race conditions.
+    let finalRole: string | null = null;
+    if (provisionedUserId) {
+      const { data: roleRow } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', provisionedUserId)
+        .single();
+      finalRole = (roleRow as any)?.role ?? null;
+      console.log(`[auth/exchange] Final role from DB: ${finalRole}`);
+    }
+
     // Fire-and-forget: audit log the login event
     if (provisionedUserId) {
       setImmediate(async () => {
@@ -283,6 +296,7 @@ router.post('/exchange', async (req: Request, res: Response) => {
     return res.json({
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
+      role: finalRole,
       user: {
         id: tokenData.user?.id,
         email,

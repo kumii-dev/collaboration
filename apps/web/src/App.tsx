@@ -165,30 +165,34 @@ function App() {
               console.log('[Kumii] /exchange response:', {
                 hasAccessToken: !!exchanged.access_token,
                 hasRefreshToken: !!exchanged.refresh_token,
+                role: exchanged.role,
                 user: exchanged.user,
               });
+
+              // ── Role is returned directly by /exchange — use it immediately.
+              // This avoids any race with /api/auth/me.
+              if (exchanged.role) {
+                console.log('[Kumii] Role from exchange response:', exchanged.role);
+                setUserRole(exchanged.role as UserRole);
+              }
+
               const { data: exchData, error: exchError } = await supabase.auth.setSession({
                 access_token: exchanged.access_token,
                 refresh_token: exchanged.refresh_token,
               });
               if (!exchError && exchData.session) {
-                console.log('[Kumii] Token exchange succeeded — user provisioned in this project');
+                console.log('[Kumii] Token exchange succeeded — session set');
                 exchangeInProgressRef.current = false;
                 setSession(exchData.session);
                 setLoading(false);
-                // Fetch role immediately with the fresh token — don't wait for
-                // the useEffect([session]) which may fire with a stale token first.
-                fetchAndSetRole(exchData.session.access_token);
                 if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
                 if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
                 return;
               }
-              // setSession failed but we still have a valid exchange token —
-              // try fetching the role directly from the exchanged access_token.
+              // setSession failed but role + exchange token are still valid
               if (exchanged.access_token) {
-                console.warn('[Kumii] setSession after exchange failed:', exchError?.message, '— using exchange token directly');
+                console.warn('[Kumii] setSession after exchange failed:', exchError?.message, '— continuing with exchange token');
                 exchangeInProgressRef.current = false;
-                fetchAndSetRole(exchanged.access_token);
                 setLoading(false);
                 if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
                 if (activeFallbackRef.current) clearTimeout(activeFallbackRef.current);
