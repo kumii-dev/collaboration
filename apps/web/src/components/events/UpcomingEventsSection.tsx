@@ -145,11 +145,21 @@ export default function UpcomingEventsSection({ categoryId, isAdmin }: Props) {
         show={showDetail}
         onHide={() => setShowDetail(false)}
         onRsvpChange={handleRsvpChange}
+        isAdmin={isAdmin}
+        categories={[]}
+        onEventUpdated={updated => {
+          queryClient.setQueryData<CommunityEvent[]>(
+            ['community-events', categoryId],
+            (prev = []) => prev.map(e => e.id === updated.id ? updated : e)
+          );
+          setSelectedEvent(updated);
+        }}
       />
       <CreateEventModal
         show={showCreate}
         onHide={() => setShowCreate(false)}
-        categoryId={categoryId}
+        categories={[]}
+        isAdmin={isAdmin ?? false}
         onCreated={handleEventCreated}
       />
     </div>

@@ -39,6 +39,20 @@ export interface CreateEventPayload {
   ends_at?: string;
   max_attendees?: number;
   is_online?: boolean;
+  is_featured?: boolean;
+}
+
+export interface UpdateEventPayload {
+  category_id?: string;
+  title?: string;
+  description?: string;
+  location?: string;
+  meeting_url?: string;
+  starts_at?: string;
+  ends_at?: string;
+  max_attendees?: number | null;
+  is_online?: boolean;
+  is_featured?: boolean;
 }
 
 // ── API calls (re-use the existing axios instance with auth interceptor) ──────
@@ -56,6 +70,11 @@ export const eventsApi = {
 
   create: async (payload: CreateEventPayload): Promise<CommunityEvent> => {
     const { data } = await api.post('/events', payload);
+    return data.data;
+  },
+
+  update: async (eventId: string, payload: UpdateEventPayload): Promise<CommunityEvent> => {
+    const { data } = await api.patch(`/events/${eventId}`, payload);
     return data.data;
   },
 

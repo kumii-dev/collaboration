@@ -1,35 +1,124 @@
 import { useState, useEffect } from 'react';
-import { Modal, Button, Badge, Alert, Spinner } from 'react-bootstrap';
+import { Modal, Button, Badge, Alert, Spinner, Form, Row, Col } from 'react-bootstrap';
 import {
   BsCalendarEvent, BsGeoAlt, BsCameraVideo,
   BsPeopleFill, BsBell, BsPersonCircle, BsLink45Deg,
+  BsPencil, BsX, BsStarFill, BsStar,
 } from 'react-icons/bs';
 import { FiExternalLink } from 'react-icons/fi';
-import { CommunityEvent, RsvpCounts, eventsApi } from '../../lib/eventsApi';
+import { CommunityEvent, RsvpCounts, UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
+
+interface Category { id: string; name: string; slug?: string; }
 
 interface Props {
   event: CommunityEvent | null;
   show: boolean;
   onHide: () => void;
   onRsvpChange: (eventId: string, status: string | null, counts: RsvpCounts) => void;
+  isAdmin?: boolean;
+  categories?: Category[];
+  onEventUpdated?: (event: CommunityEvent) => void;
 }
 
-export default function EventDetailModal({ event, show, onHide, onRsvpChange }: Props) {
+export default function EventDetailModal({ event, show, onHide, onRsvpChange, isAdmin = false, categories = [], onEventUpdated }: Props) {
   const [userRsvp,    setUserRsvp]    = useState<string | null>(null);
   const [counts,      setCounts]      = useState<RsvpCounts>({ going: 0, interested: 0, not_going: 0 });
   const [loading,     setLoading]     = useState(false);
   const [reminderSet, setReminderSet] = useState(false);
   const [error,       setError]       = useState<string | null>(null);
 
-  // Sync state whenever the event prop changes (e.g. after card RSVP)
+  // Edit mode state
+  const [isEditing,   setIsEditing]   = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError,   setEditError]   = useState<string | null>(null);
+  const [editForm,    setEditForm]    = useState({
+    category_id:   '',
+    title:         '',
+    description:   '',
+    location:      '',
+    meeting_url:   '',
+    starts_at:     '',
+    ends_at:       '',
+    max_attendees: '' as string,
+    is_online:     false,
+    is_featured:   false,
+  });
+
+  function toLocalDatetime(iso: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  const setEF = (key: string, val: unknown) => setEditForm(p => ({ ...p, [key]: val }));
+
+  // Sync RSVP state whenever the event prop changes (e.g. after card RSVP)
   useEffect(() => {
     if (event) {
       setUserRsvp(event.user_rsvp);
       setCounts(event.rsvp_counts);
       setReminderSet(false);
       setError(null);
+      // Pre-fill edit form
+      setIsEditing(false);
+      setEditError(null);
+      setEditForm({
+        category_id:   event.category_id,
+        title:         event.title,
+        description:   event.description ?? '',
+        location:      event.location ?? '',
+        meeting_url:   event.meeting_url ?? '',
+        starts_at:     toLocalDatetime(event.starts_at),
+        ends_at:       event.ends_at ? toLocalDatetime(event.ends_at) : '',
+        max_attendees: event.max_attendees != null ? String(event.max_attendees) : '',
+        is_online:     event.is_online,
+        is_featured:   event.is_featured,
+      });
     }
-  }, [event?.id, event?.user_rsvp, event?.rsvp_counts]);
+  }, [event?.id, event?.user_rsvp, event?.rsvp_counts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!event) return;
+    setEditLoading(true);
+    setEditError(null);
+    try {
+      const payload: UpdateEventPayload = {
+        category_id:   editForm.category_id || undefined,
+        title:         editForm.title,
+        description:   editForm.description || undefined,
+        location:      editForm.is_online ? undefined : (editForm.location || undefined),
+        meeting_url:   editForm.is_online ? (editForm.meeting_url || undefined) : undefined,
+        starts_at:     new Date(editForm.starts_at).toISOString(),
+        ends_at:       editForm.ends_at ? new Date(editForm.ends_at).toISOString() : undefined,
+        max_attendees: editForm.max_attendees ? parseInt(editForm.max_attendees as string) : null,
+        is_online:     editForm.is_online,
+        is_featured:   editForm.is_featured,
+      };
+      const updated = await eventsApi.update(event.id, payload);
+      onEventUpdated?.(updated);
+      setIsEditing(false);
+    } catch (err: any) {
+      setEditError(err?.response?.data?.error ?? err.message);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    borderRadius: '8px',
+    border: '1px solid #E5E5E3',
+    fontSize: '0.9rem',
+    background: '#FAFAF8',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontWeight: 600,
+    color: '#2D2D2D',
+    fontSize: '0.875rem',
+    marginBottom: '0.35rem',
+  };
 
   if (!event) return null;
 
@@ -94,24 +183,51 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange }: 
         <div style={{ height: '6px', background: 'linear-gradient(90deg,#7a8567,#c5df96)' }} />
 
         <Modal.Header closeButton style={{ borderBottom: '1px solid #E5E5E3', padding: '1.25rem 1.5rem' }}>
-          <div>
-            <div className="d-flex gap-2 mb-1 flex-wrap">
-              {event.is_online && (
-                <Badge style={{ background: '#7a8567' }}>
-                  <BsCameraVideo className="me-1" />Online
-                </Badge>
-              )}
-              {event.forum_categories && (
-                <Badge style={{ background: '#c5df96', color: '#2D2D2D' }}>
-                  {event.forum_categories.name}
-                </Badge>
-              )}
-              {isFull          && <Badge bg="danger">Full</Badge>}
-              {event.is_cancelled && <Badge bg="secondary">Cancelled</Badge>}
+          <div className="w-100 d-flex align-items-start justify-content-between pe-2">
+            <div>
+              <div className="d-flex gap-2 mb-1 flex-wrap">
+                {event.is_online && (
+                  <Badge style={{ background: '#7a8567' }}>
+                    <BsCameraVideo className="me-1" />Online
+                  </Badge>
+                )}
+                {event.forum_categories && (
+                  <Badge style={{ background: '#c5df96', color: '#2D2D2D' }}>
+                    {event.forum_categories.name}
+                  </Badge>
+                )}
+                {event.is_featured && (
+                  <Badge style={{ background: '#f5c542', color: '#2D2D2D' }}>
+                    <BsStarFill className="me-1" size={11} />Featured
+                  </Badge>
+                )}
+                {isFull          && <Badge bg="danger">Full</Badge>}
+                {event.is_cancelled && <Badge bg="secondary">Cancelled</Badge>}
+              </div>
+              <Modal.Title style={{ fontWeight: 700, color: '#2D2D2D', fontSize: '1.15rem' }}>
+                {event.title}
+              </Modal.Title>
             </div>
-            <Modal.Title style={{ fontWeight: 700, color: '#2D2D2D', fontSize: '1.15rem' }}>
-              {event.title}
-            </Modal.Title>
+            {isAdmin && !isEditing && (
+              <Button
+                size="sm"
+                variant="outline-secondary"
+                style={{ borderRadius: '8px', fontSize: '0.8rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={() => setIsEditing(true)}
+              >
+                <BsPencil className="me-1" />Edit
+              </Button>
+            )}
+            {isAdmin && isEditing && (
+              <Button
+                size="sm"
+                variant="outline-danger"
+                style={{ borderRadius: '8px', fontSize: '0.8rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={() => setIsEditing(false)}
+              >
+                <BsX size={16} />Cancel Edit
+              </Button>
+            )}
           </div>
         </Modal.Header>
 
@@ -127,7 +243,116 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange }: 
             </Alert>
           )}
 
-          <div className="row g-4">
+          {/* ── Edit form (admin only) ── */}
+          {isEditing && (
+            <Form onSubmit={handleSaveEdit}>
+              {editError && <Alert variant="danger" dismissible onClose={() => setEditError(null)}>{editError}</Alert>}
+
+              {/* Community */}
+              {categories.length > 0 && (
+                <Form.Group className="mb-3">
+                  <Form.Label style={labelStyle}>Community</Form.Label>
+                  <Form.Select style={inputStyle} value={editForm.category_id} onChange={e => setEF('category_id', e.target.value)}>
+                    <option value="">— no community —</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </Form.Select>
+                </Form.Group>
+              )}
+
+              {/* Title */}
+              <Form.Group className="mb-3">
+                <Form.Label style={labelStyle}>Title <span className="text-danger">*</span></Form.Label>
+                <Form.Control style={inputStyle} value={editForm.title} onChange={e => setEF('title', e.target.value)} required />
+              </Form.Group>
+
+              {/* Description */}
+              <Form.Group className="mb-3">
+                <Form.Label style={labelStyle}>Description</Form.Label>
+                <Form.Control as="textarea" rows={3} style={{ ...inputStyle, resize: 'none' }} value={editForm.description} onChange={e => setEF('description', e.target.value)} />
+              </Form.Group>
+
+              {/* Dates */}
+              <Row className="mb-3">
+                <Col>
+                  <Form.Label style={labelStyle}>Start <span className="text-danger">*</span></Form.Label>
+                  <Form.Control type="datetime-local" style={inputStyle} value={editForm.starts_at} onChange={e => setEF('starts_at', e.target.value)} required />
+                </Col>
+                <Col>
+                  <Form.Label style={labelStyle}>End</Form.Label>
+                  <Form.Control type="datetime-local" style={inputStyle} value={editForm.ends_at} onChange={e => setEF('ends_at', e.target.value)} />
+                </Col>
+              </Row>
+
+              {/* Online toggle */}
+              <Form.Group className="mb-3">
+                <Form.Check type="switch" id="edit-event-online" label={<span style={labelStyle}>Online Event</span>} checked={editForm.is_online} onChange={e => setEF('is_online', e.target.checked)} />
+              </Form.Group>
+
+              {/* Location / URL */}
+              {editForm.is_online ? (
+                <Form.Group className="mb-3">
+                  <Form.Label style={labelStyle}>Meeting URL</Form.Label>
+                  <Form.Control type="url" style={inputStyle} value={editForm.meeting_url} onChange={e => setEF('meeting_url', e.target.value)} placeholder="https://zoom.us/j/..." />
+                </Form.Group>
+              ) : (
+                <Form.Group className="mb-3">
+                  <Form.Label style={labelStyle}>Location</Form.Label>
+                  <Form.Control style={inputStyle} value={editForm.location} onChange={e => setEF('location', e.target.value)} placeholder="e.g. Nairobi Hub, Floor 3" />
+                </Form.Group>
+              )}
+
+              {/* Capacity */}
+              <Form.Group className="mb-3">
+                <Form.Label style={labelStyle}>Max Attendees</Form.Label>
+                <Form.Control type="number" min="1" style={inputStyle} value={editForm.max_attendees} onChange={e => setEF('max_attendees', e.target.value)} placeholder="Leave empty for unlimited" />
+              </Form.Group>
+
+              {/* Featured toggle */}
+              <div
+                className="mb-4 p-3"
+                style={{
+                  borderRadius: '10px',
+                  border: editForm.is_featured ? '1px solid #c5df96' : '1px solid #E5E5E3',
+                  background: editForm.is_featured ? '#f9fdf2' : '#FAFAF8',
+                  cursor: 'pointer',
+                }}
+                onClick={() => setEF('is_featured', !editForm.is_featured)}
+              >
+                <div className="d-flex align-items-center gap-2">
+                  {editForm.is_featured
+                    ? <BsStarFill size={18} style={{ color: '#c5a830' }} />
+                    : <BsStar size={18} style={{ color: '#aaa' }} />
+                  }
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#2D2D2D' }}>Featured Event</div>
+                    <div style={{ fontSize: '0.8rem', color: '#888' }}>Shown in the highlighted strip on the Events page</div>
+                  </div>
+                  <Form.Check
+                    type="switch"
+                    id="edit-event-featured"
+                    className="ms-auto"
+                    checked={editForm.is_featured}
+                    onChange={e => { e.stopPropagation(); setEF('is_featured', e.target.checked); }}
+                  />
+                </div>
+              </div>
+
+              <div className="d-flex gap-2 justify-content-end">
+                <Button variant="outline-secondary" style={{ borderRadius: '8px' }} onClick={() => setIsEditing(false)} disabled={editLoading}>Cancel</Button>
+                <Button
+                  type="submit"
+                  disabled={editLoading}
+                  style={{ background: 'linear-gradient(135deg,#7a8567,#c5df96)', border: 'none', borderRadius: '8px', fontWeight: 600, minWidth: '130px', color: '#fff' }}
+                >
+                  {editLoading ? 'Saving…' : 'Save Changes'}
+                </Button>
+              </div>
+            </Form>
+          )}
+
+          {/* ── View mode ── */}
+          {!isEditing && (
+            <div className="row g-4">
             {/* ── Left: details ── */}
             <div className="col-md-7">
               {event.description && (
@@ -303,6 +528,7 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange }: 
               </div>
             </div>
           </div>
+          )}
         </Modal.Body>
       </div>
     </Modal>

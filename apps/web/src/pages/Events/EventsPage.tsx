@@ -62,6 +62,13 @@ export default function EventsPage() {
     queryClient.setQueryData<CommunityEvent[]>('all-events', (prev = []) => [event, ...prev]);
   };
 
+  const handleEventUpdated = (event: CommunityEvent) => {
+    queryClient.setQueryData<CommunityEvent[]>('all-events', (prev = []) =>
+      prev.map(e => e.id === event.id ? event : e)
+    );
+    setSelectedEvent(event);
+  };
+
   const filtered = events.filter(e => {
     const matchesSearch   = !search || e.title.toLowerCase().includes(search.toLowerCase()) ||
                             (e.description ?? '').toLowerCase().includes(search.toLowerCase());
@@ -252,11 +259,15 @@ export default function EventsPage() {
         show={showDetail}
         onHide={() => setShowDetail(false)}
         onRsvpChange={handleRsvpChange}
+        isAdmin={isAdmin}
+        categories={categories}
+        onEventUpdated={handleEventUpdated}
       />
       <CreateEventModal
         show={showCreate}
         onHide={() => setShowCreate(false)}
-        categoryId={categoryFilter || (categories[0]?.id ?? '')}
+        categories={categories}
+        isAdmin={isAdmin}
         onCreated={handleEventCreated}
       />
     </div>
