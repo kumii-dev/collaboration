@@ -6,6 +6,18 @@ import { format } from 'date-fns';
 import api from '../../lib/api';
 import { eventsApi, CommunityEvent } from '../../lib/eventsApi';
 
+// Never throws — returns '—' for null/invalid dates
+const safeFormat = (dateStr: string | null | undefined, fmt: string): string => {
+  if (!dateStr) return '—';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '—';
+    return format(d, fmt);
+  } catch {
+    return '—';
+  }
+};
+
 interface Report {
   id: string;
   content_type: 'thread' | 'post' | 'message' | 'user';
@@ -50,13 +62,16 @@ export default function ModerationPage() {
   const queryClient = useQueryClient();
 
   // Fetch pending reports
-  const { data: reports, isLoading: loadingReports } = useQuery(
+  // API returns { reports: [], total, limit, offset } — unwrap defensively
+  const { data: reports, isLoading: loadingReports, error: reportsError } = useQuery(
     ['moderation-reports', 'pending'],
     async () => {
       const response = await api.get('/moderation/queue', {
-        params: { status: 'pending' }
+        params: { status: 'pending', limit: 50 }
       });
-      return response.data.data as Report[];
+      const raw = response.data?.data ?? response.data;
+      const arr = raw?.reports ?? raw?.data ?? raw;
+      return (Array.isArray(arr) ? arr : []) as Report[];
     }
   );
 
@@ -67,7 +82,9 @@ export default function ModerationPage() {
       const response = await api.get('/moderation/actions', {
         params: { limit: 50 }
       });
-      return response.data.data as ModerationAction[];
+      const raw = response.data?.data ?? response.data;
+      const arr = raw?.data ?? raw;
+      return (Array.isArray(arr) ? arr : []) as ModerationAction[];
     }
   );
 
@@ -78,7 +95,9 @@ export default function ModerationPage() {
       const response = await api.get('/moderation/audit-log', {
         params: { limit: 100 }
       });
-      return response.data.data as AuditLog[];
+      const raw = response.data?.data ?? response.data;
+      const arr = raw?.data ?? raw;
+      return (Array.isArray(arr) ? arr : []) as AuditLog[];
     }
   );
 
@@ -196,6 +215,11 @@ export default function ModerationPage() {
           <Row>
             {/* Reports List */}
             <Col md={selectedReportId ? 6 : 12}>
+              {reportsError != null && (
+                <Alert variant="danger">
+                  Failed to load reports. Please refresh the page.
+                </Alert>
+              )}
               {loadingReports && (
                 <div className="text-center p-5">
                   <Spinner animation="border" />
@@ -225,7 +249,7 @@ export default function ModerationPage() {
                         {getStatusBadge(report.status)}
                       </div>
                       <small className="text-muted">
-                        {format(new Date(report.created_at), 'MMM d, HH:mm')}
+                        {safeFormat(report.created_at, 'MMM d, HH:mm')}
                       </small>
                     </div>
 
@@ -397,7 +421,7 @@ export default function ModerationPage() {
               <tbody>
                 {actions?.map((action) => (
                   <tr key={action.id}>
-                    <td>{format(new Date(action.created_at), 'MMM d, yyyy HH:mm')}</td>
+                    <td>{safeFormat(action.created_at, 'MMM d, yyyy HH:mm')}</td>
                     <td>{getActionTypeBadge(action.action_type)}</td>
                     <td>{action.moderator_name}</td>
                     <td>{action.target_user_name || '-'}</td>
@@ -443,7 +467,7 @@ export default function ModerationPage() {
                 {auditLogs?.map((log) => (
                   <tr key={log.id}>
                     <td>
-                      <small>{format(new Date(log.created_at), 'MMM d, yyyy HH:mm:ss')}</small>
+                      <small>{safeFormat(log.created_at, 'MMM d, yyyy HH:mm:ss')}</small>
                     </td>
                     <td>{log.moderator_name}</td>
                     <td>
@@ -499,7 +523,7 @@ export default function ModerationPage() {
                           {event.is_cancelled && <Badge bg="secondary" className="ms-1">Cancelled</Badge>}
                         </td>
                         <td style={{ fontSize: '0.875rem', color: '#555' }}>
-                          {format(new Date(event.starts_at), 'MMM d, yyyy HH:mm')}
+                          {safeFormat(event.starts_at, 'MMM d, yyyy HH:mm')}
                         </td>
                         <td style={{ fontSize: '0.875rem' }}>
                           {event.forum_categories?.name ?? '—'}
