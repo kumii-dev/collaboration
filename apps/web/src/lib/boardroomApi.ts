@@ -61,7 +61,12 @@ export interface CreateBookingPayload {
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export async function fetchBoardrooms(params?: { active?: boolean; limit?: number; offset?: number }): Promise<{ data: Boardroom[]; total: number }> {
-  const res = await api.get('/boardrooms', { params });
+  // Strip undefined values so axios doesn't serialize them as the string "undefined"
+  const cleanParams: Record<string, string | number> = {};
+  if (params?.limit  !== undefined) cleanParams.limit  = params.limit;
+  if (params?.offset !== undefined) cleanParams.offset = params.offset;
+  if (params?.active !== undefined) cleanParams.active = String(params.active);
+  const res = await api.get('/boardrooms', { params: Object.keys(cleanParams).length ? cleanParams : undefined });
   return res.data;
 }
 

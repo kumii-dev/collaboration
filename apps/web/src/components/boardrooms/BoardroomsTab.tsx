@@ -67,7 +67,7 @@ export default function BoardroomsTab({ isAdmin }: Props) {
       {/* ── Available Rooms ── */}
       {subNav === 'rooms' && (
         <>
-          {/* Admin toolbar */}
+          {/* Admin toolbar — always visible when isAdmin, regardless of load state */}
           {isAdmin && (
             <div className="d-flex justify-content-end mb-3">
               <Button size="sm" style={BTN_STYLE} onClick={() => setShowCreate(true)}>
@@ -84,7 +84,18 @@ export default function BoardroomsTab({ isAdmin }: Props) {
           )}
 
           {isError && (
-            <Alert variant="danger">Failed to load boardrooms. Please try again.</Alert>
+            <Alert variant="warning" className="d-flex align-items-start gap-2">
+              <div>
+                <strong>Could not load boardrooms.</strong>
+                {isAdmin && (
+                  <div className="mt-1" style={{ fontSize: 13 }}>
+                    If you just deployed this feature, make sure you have run the{' '}
+                    <code>011_boardrooms.sql</code> migration in Supabase. Once the tables exist,
+                    use the <strong>Add Boardroom</strong> button above to create your first room.
+                  </div>
+                )}
+              </div>
+            </Alert>
           )}
 
           {!isLoading && !isError && boardrooms.length === 0 && (
@@ -95,13 +106,13 @@ export default function BoardroomsTab({ isAdmin }: Props) {
               <div style={{ fontSize: 36 }}>🏢</div>
               <p className="mt-2">
                 {isAdmin
-                  ? 'No boardrooms yet. Add one to get started.'
+                  ? 'No boardrooms yet. Click "Add Boardroom" above to get started.'
                   : 'No boardrooms available right now.'}
               </p>
             </div>
           )}
 
-          {!isLoading && boardrooms.length > 0 && (
+          {!isLoading && !isError && boardrooms.length > 0 && (
             <Row className="g-4">
               {boardrooms.map(room => (
                 <Col key={room.id} md={6} lg={4}>
@@ -111,12 +122,10 @@ export default function BoardroomsTab({ isAdmin }: Props) {
             </Row>
           )}
 
-          {showCreate && isAdmin && (
-            <CreateBoardroomModal
-              show={showCreate}
-              onHide={() => setShowCreate(false)}
-            />
-          )}
+          <CreateBoardroomModal
+            show={showCreate && isAdmin}
+            onHide={() => setShowCreate(false)}
+          />
         </>
       )}
 

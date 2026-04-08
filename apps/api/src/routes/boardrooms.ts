@@ -416,12 +416,14 @@ router.post(
       }
 
       // Insert booking
+      const slotEnd = new Date(slotDate.getTime() + 60 * 60 * 1000);
       const { data: booking, error: bookingError } = await supabaseAdmin
         .from('boardroom_bookings')
         .insert({
           boardroom_id,
           user_id:    req.user!.id,
           slot_start: slotDate.toISOString(),
+          slot_end:   slotEnd.toISOString(),
           notes:      notes ?? null,
           status:     'confirmed',
         })
