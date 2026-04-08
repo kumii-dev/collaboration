@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, Button, Spinner, ListGroup } from 'react-bootstrap';
-import { FiMessageSquare, FiEye, FiUser, FiArrowRight, FiTrendingUp } from 'react-icons/fi';
+import { FiMessageSquare, FiEye, FiUser, FiArrowRight, FiTrendingUp, FiHome } from 'react-icons/fi';
 import { BsChatDots } from 'react-icons/bs';
 import { FiCalendar } from 'react-icons/fi';
 import { format } from 'date-fns';
@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import UpcomingEventsSection from '../../components/events/UpcomingEventsSection';
 import CommunityChatPanel from '../../components/community/CommunityChatPanel';
 import TrendsTab from '../../components/wordcloud/TrendsTab';
+import BoardroomsTab from '../../components/boardrooms/BoardroomsTab';
 
 interface Category {
   id: string;
@@ -53,7 +54,7 @@ export default function CategoryDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'discussions' | 'chat' | 'events' | 'trends'>('discussions');
+  const [activeTab, setActiveTab] = useState<'discussions' | 'chat' | 'events' | 'boardrooms' | 'trends'>('discussions');
 
   // Fetch current user's role from this project's profiles table.
   // Admin/moderator status is managed here directly — not sourced from Lovable JWT
@@ -211,14 +212,29 @@ export default function CategoryDetailPage() {
         }}
       >
         {([
-          { key: 'discussions', label: 'Discussions', Icon: FiMessageSquare },
-          { key: 'chat',        label: 'Chat',        Icon: BsChatDots },
-          { key: 'events',      label: 'Events',      Icon: FiCalendar },
-          { key: 'trends',      label: 'Trends',      Icon: FiTrendingUp },
-        ] as const).map(({ key, label, Icon }) => (
+          { key: 'discussions', label: 'Discussions', Icon: FiMessageSquare, always: true },
+          { key: 'chat',        label: 'Chat',        Icon: BsChatDots,      always: true },
+          { key: 'events',      label: 'Events',      Icon: FiCalendar,      always: true },
+          {
+            key: 'boardrooms', label: 'Boardrooms', Icon: FiHome,
+            only: '22-on-sloane',
+          },
+          {
+            key: 'trends', label: 'Trends', Icon: FiTrendingUp,
+            only: ['sloane-connect', 'startup-huddle'],
+          },
+        ] as const).filter(tab => {
+          const slug = category.slug ?? category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          if ('always' in tab && tab.always) return true;
+          if ('only' in tab) {
+            const only = tab.only;
+            return Array.isArray(only) ? only.includes(slug) : slug === only;
+          }
+          return true;
+        }).map(({ key, label, Icon }) => (
           <button
             key={key}
-            onClick={() => setActiveTab(key)}
+            onClick={() => setActiveTab(key as any)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -381,6 +397,11 @@ export default function CategoryDetailPage() {
       {/* ── Tab: Events ── */}
       {activeTab === 'events' && (
         <UpcomingEventsSection categoryId={category.id} isAdmin={isAdmin} />
+      )}
+
+      {/* ── Tab: Boardrooms ── */}
+      {activeTab === 'boardrooms' && (
+        <BoardroomsTab isAdmin={isAdmin} />
       )}
 
       {/* ── Tab: Trends ── */}
