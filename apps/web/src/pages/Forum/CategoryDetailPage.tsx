@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, Button, Spinner, ListGroup } from 'react-bootstrap';
-import { FiMessageSquare, FiEye, FiUser, FiArrowRight } from 'react-icons/fi';
+import { FiMessageSquare, FiEye, FiUser, FiArrowRight, FiTrendingUp } from 'react-icons/fi';
 import { BsChatDots } from 'react-icons/bs';
 import { FiCalendar } from 'react-icons/fi';
 import { format } from 'date-fns';
@@ -10,6 +10,7 @@ import api from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import UpcomingEventsSection from '../../components/events/UpcomingEventsSection';
 import CommunityChatPanel from '../../components/community/CommunityChatPanel';
+import TrendsTab from '../../components/wordcloud/TrendsTab';
 
 interface Category {
   id: string;
@@ -52,7 +53,7 @@ export default function CategoryDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'discussions' | 'chat' | 'events'>('discussions');
+  const [activeTab, setActiveTab] = useState<'discussions' | 'chat' | 'events' | 'trends'>('discussions');
 
   // Fetch current user's role from this project's profiles table.
   // Admin/moderator status is managed here directly — not sourced from Lovable JWT
@@ -213,6 +214,7 @@ export default function CategoryDetailPage() {
           { key: 'discussions', label: 'Discussions', Icon: FiMessageSquare },
           { key: 'chat',        label: 'Chat',        Icon: BsChatDots },
           { key: 'events',      label: 'Events',      Icon: FiCalendar },
+          { key: 'trends',      label: 'Trends',      Icon: FiTrendingUp },
         ] as const).map(({ key, label, Icon }) => (
           <button
             key={key}
@@ -379,6 +381,15 @@ export default function CategoryDetailPage() {
       {/* ── Tab: Events ── */}
       {activeTab === 'events' && (
         <UpcomingEventsSection categoryId={category.id} isAdmin={isAdmin} />
+      )}
+
+      {/* ── Tab: Trends ── */}
+      {activeTab === 'trends' && (
+        <TrendsTab
+          contextId={category.slug ?? category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}
+          title={`${category.name} Trends`}
+          isAdmin={isAdmin}
+        />
       )}
     </div>
   );
