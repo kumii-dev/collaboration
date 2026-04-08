@@ -4,11 +4,12 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 
 INSERT INTO profiles (id, email, role)
-VALUES (
-  '849f6bba-9224-45d7-a889-a94d2e1d5d64',
-  (SELECT email FROM auth.users WHERE id = '849f6bba-9224-45d7-a889-a94d2e1d5d64'),
+SELECT
+  id,
+  email,
   'admin'
-)
+FROM auth.users
+WHERE id = '849f6bba-9224-45d7-a889-a94d2e1d5d64'
 ON CONFLICT (id) DO UPDATE SET role = 'admin';
 
 -- Verify:
