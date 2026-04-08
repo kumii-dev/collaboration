@@ -56,17 +56,19 @@ export default function CategoryDetailPage() {
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'discussions' | 'chat' | 'events' | 'boardrooms' | 'trends'>('discussions');
 
-  // Fetch current user's role from this project's profiles table.
-  // Admin/moderator status is managed here directly — not sourced from Lovable JWT
-  // (the Lovable JWT contains no role field). To promote a user to admin, update
-  // their role in the profiles table via Supabase dashboard or SQL.
+  // Fetch current user's role directly from Supabase (bypasses the API so it
+  // works even when the user has no profile row yet — returns null gracefully).
   const { data: currentUserProfile } = useQuery(
     'current-user-profile',
     async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
-      const response = await api.get(`/users/${user.id}`);
-      return response.data.data as { role: string };
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+      return profile as { role: string } | null;
     },
     { staleTime: 300_000, retry: 1 }
   );
