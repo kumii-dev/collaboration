@@ -20,7 +20,7 @@ import eventsRoutes from './routes/events.js';
 import attachmentsRoutes from './routes/attachments.js';
 import adminRoutes from './routes/admin.js';
 import wordCloudRoutes from './routes/wordcloud.js';
-import boardroomsRoutes from './routes/boardrooms.js';
+import boardroomsRoutes, { startReminderInterval } from './routes/boardrooms.js';
 
 const app = express();
 
@@ -237,9 +237,14 @@ if (process.env.VERCEL !== '1') {
     logger.info(`🌐 CORS Origin: ${config.CORS_ORIGIN}`);
   });
 
+  // Boardroom reminder interval (replaces pg_cron)
+  const reminderInterval = startReminderInterval();
+  logger.info('⏰ Boardroom reminder interval started');
+
   // Graceful shutdown
   process.on('SIGTERM', () => {
     logger.info('SIGTERM received, closing server gracefully...');
+    clearInterval(reminderInterval);
     server.close(() => {
       logger.info('Server closed');
       process.exit(0);
@@ -248,6 +253,7 @@ if (process.env.VERCEL !== '1') {
 
   process.on('SIGINT', () => {
     logger.info('SIGINT received, closing server gracefully...');
+    clearInterval(reminderInterval);
     server.close(() => {
       logger.info('Server closed');
       process.exit(0);

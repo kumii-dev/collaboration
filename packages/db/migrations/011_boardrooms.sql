@@ -151,72 +151,62 @@ CREATE POLICY "bookings_update" ON boardroom_bookings
 CREATE POLICY "notif_dedup_select" ON boardroom_booking_notifications
   FOR SELECT USING (auth.uid() IS NOT NULL);
 
--- 7. pg_cron: reminder job ────────────────────────────────────────────────────
--- Fires every minute; sends notifications at ~60 min and ~30 min before each booking.
--- Uses a dedup table to prevent re-sending.
+-- 7. Reminder function (called by the API on a Node.js interval) ─────────────
+-- pg_cron is not available on all Supabase plans.
+-- Instead, the Express API calls this function every minute via setInterval.
+CREATE OR REPLACE FUNCTION send_boardroom_reminders()
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  r          RECORD;
+  alert_type TEXT;
+BEGIN
+  FOR r IN
+    SELECT
+      b.id         AS booking_id,
+      b.user_id,
+      b.slot_start,
+      br.name      AS room_name,
+      CASE
+        WHEN b.slot_start BETWEEN now() + INTERVAL '58 minutes'
+                          AND     now() + INTERVAL '62 minutes' THEN '60min'
+        WHEN b.slot_start BETWEEN now() + INTERVAL '28 minutes'
+                          AND     now() + INTERVAL '32 minutes' THEN '30min'
+        ELSE NULL
+      END          AS alert_type
+    FROM  boardroom_bookings b
+    JOIN  boardrooms         br ON br.id = b.boardroom_id
+    WHERE b.status = 'confirmed'
+      AND b.slot_start > now()
+      AND b.slot_start < now() + INTERVAL '63 minutes'
+  LOOP
+    CONTINUE WHEN r.alert_type IS NULL;
 
-SELECT cron.unschedule('boardroom-reminders') WHERE EXISTS (
-  SELECT 1 FROM cron.job WHERE jobname = 'boardroom-reminders'
-);
+    -- Skip if already sent
+    CONTINUE WHEN EXISTS (
+      SELECT 1 FROM boardroom_booking_notifications
+       WHERE booking_id = r.booking_id AND alert_type = r.alert_type
+    );
 
-SELECT cron.schedule(
-  'boardroom-reminders',
-  '* * * * *',
-  $cron$
-  DO $inner$
-  DECLARE
-    r          RECORD;
-    alert_key  TEXT;
-  BEGIN
-    FOR r IN
-      SELECT
-        b.id         AS booking_id,
-        b.user_id,
-        b.slot_start,
-        br.name      AS room_name,
-        CASE
-          WHEN b.slot_start BETWEEN now() + INTERVAL '58 minutes'
-                            AND     now() + INTERVAL '62 minutes' THEN '60min'
-          WHEN b.slot_start BETWEEN now() + INTERVAL '28 minutes'
-                            AND     now() + INTERVAL '32 minutes' THEN '30min'
-          ELSE NULL
-        END          AS alert_type
-      FROM  boardroom_bookings b
-      JOIN  boardrooms         br ON br.id = b.boardroom_id
-      WHERE b.status = 'confirmed'
-        AND b.slot_start > now()
-        AND b.slot_start < now() + INTERVAL '63 minutes'
-    LOOP
-      CONTINUE WHEN r.alert_type IS NULL;
+    INSERT INTO notifications (user_id, type, title, message, data)
+    VALUES (
+      r.user_id,
+      'boardroom_reminder',
+      CASE r.alert_type
+        WHEN '60min' THEN 'Boardroom in 1 hour'
+        ELSE              'Boardroom in 30 minutes'
+      END,
+      'Your booking for ' || r.room_name || ' starts at '
+        || to_char(r.slot_start AT TIME ZONE 'Africa/Johannesburg', 'HH24:MI') || ' SAST.',
+      jsonb_build_object(
+        'booking_id', r.booking_id,
+        'room_name',  r.room_name,
+        'slot_start', r.slot_start
+      )
+    );
 
-      -- Skip if already sent
-      CONTINUE WHEN EXISTS (
-        SELECT 1 FROM boardroom_booking_notifications
-         WHERE booking_id = r.booking_id AND alert_type = r.alert_type
-      );
-
-      INSERT INTO notifications (user_id, type, title, message, data)
-      VALUES (
-        r.user_id,
-        'boardroom_reminder',
-        CASE r.alert_type
-          WHEN '60min' THEN 'Boardroom in 1 hour'
-          ELSE              'Boardroom in 30 minutes'
-        END,
-        'Your booking for ' || r.room_name || ' starts at '
-          || to_char(r.slot_start AT TIME ZONE 'Africa/Johannesburg', 'HH24:MI') || ' SAST.',
-        jsonb_build_object(
-          'booking_id', r.booking_id,
-          'room_name',  r.room_name,
-          'slot_start', r.slot_start
-        )
-      );
-
-      INSERT INTO boardroom_booking_notifications (booking_id, alert_type)
-      VALUES (r.booking_id, r.alert_type)
-      ON CONFLICT (booking_id, alert_type) DO NOTHING;
-    END LOOP;
-  END;
-  $inner$ LANGUAGE plpgsql;
-  $cron$
-);
+    INSERT INTO boardroom_booking_notifications (booking_id, alert_type)
+    VALUES (r.booking_id, r.alert_type)
+    ON CONFLICT (booking_id, alert_type) DO NOTHING;
+  END LOOP;
+END;
+$$;

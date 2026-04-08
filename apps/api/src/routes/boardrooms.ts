@@ -542,4 +542,19 @@ router.patch(
   }
 );
 
+// ── Reminder interval (replaces pg_cron) ──────────────────────────────────────
+// Calls the send_boardroom_reminders() SQL function every 60 seconds.
+// On Vercel serverless this won't run persistently, but works fine in
+// local / long-lived Node.js deployments.
+export function startReminderInterval(): NodeJS.Timeout {
+  return setInterval(async () => {
+    try {
+      const { error } = await supabaseAdmin.rpc('send_boardroom_reminders');
+      if (error) logger.warn('Boardroom reminder error:', error.message);
+    } catch (e: any) {
+      logger.warn('Boardroom reminder interval error:', e.message);
+    }
+  }, 60_000);
+}
+
 export default router;
