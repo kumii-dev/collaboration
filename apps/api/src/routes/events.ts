@@ -540,11 +540,14 @@ router.get('/reminders/due', async (req, res) => {
 });
 
 // ── GET /api/events/:id/rsvps/attendees  (admin only) ────────────────────────
-// Returns full attendee list with profile details for admin RSVP management.
+// Two-step query: fetch RSVPs, then join profiles manually.
+// community_event_rsvps.user_id → auth.users (not profiles), so PostgREST
+// cannot traverse the FK to profiles in a single select.
 router.get('/:id/rsvps/attendees', authenticate, requireAdmin,
   async (req: AuthRequest, res) => {
     const { id } = req.params;
 
+    // 1. Verify event exists
     const { data: event, error: eventErr } = await supabaseAdmin
       .from('community_events')
       .select('id, title')
@@ -554,41 +557,66 @@ router.get('/:id/rsvps/attendees', authenticate, requireAdmin,
     if (eventErr || !event)
       return res.status(404).json({ success: false, error: 'Event not found.' });
 
-    const { data, error } = await supabaseAdmin
+    // 2. Fetch all RSVPs for this event
+    const { data: rsvps, error: rsvpErr } = await supabaseAdmin
       .from('community_event_rsvps')
-      .select(`
-        id,
-        status,
-        created_at,
-        user:profiles!community_event_rsvps_user_id_fkey_profiles (
-          id,
-          full_name,
-          email,
-          sector,
-          avatar_url
-        )
-      `)
+      .select('id, user_id, status, created_at')
       .eq('event_id', id)
       .order('created_at', { ascending: true });
 
-    if (error) {
-      logger.error('GET /events/:id/rsvps/attendees', error);
-      return res.status(500).json({ success: false, error: error.message });
+    if (rsvpErr) {
+      logger.error('GET /events/:id/rsvps/attendees - rsvps', rsvpErr);
+      return res.status(500).json({ success: false, error: rsvpErr.message });
     }
 
-    const rows = data ?? [];
+    const rows = rsvps ?? [];
+
+    // 3. Fetch profiles for those user IDs
+    const userIds = [...new Set(rows.map(r => r.user_id))];
+    let profileMap: Record<string, { id: string; full_name: string | null; email: string; sector: string | null; avatar_url: string | null }> = {};
+
+    if (userIds.length > 0) {
+      const { data: profiles, error: profErr } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, email, sector, avatar_url')
+        .in('id', userIds);
+
+      if (profErr) {
+        logger.error('GET /events/:id/rsvps/attendees - profiles', profErr);
+        return res.status(500).json({ success: false, error: profErr.message });
+      }
+
+      for (const p of profiles ?? []) {
+        profileMap[p.id] = p;
+      }
+    }
+
+    // 4. Merge
+    const attendees = rows.map(r => ({
+      id:         r.id,
+      status:     r.status,
+      created_at: r.created_at,
+      user: profileMap[r.user_id] ?? {
+        id:         r.user_id,
+        full_name:  null,
+        email:      '',
+        sector:     null,
+        avatar_url: null,
+      },
+    }));
+
     return res.json({
       success: true,
       data: {
         event_id:    id,
         event_title: event.title,
-        total:       rows.length,
+        total:       attendees.length,
         counts: {
-          going:     rows.filter(r => r.status === 'going').length,
-          interested: rows.filter(r => r.status === 'interested').length,
-          not_going: rows.filter(r => r.status === 'not_going').length,
+          going:      attendees.filter(r => r.status === 'going').length,
+          interested: attendees.filter(r => r.status === 'interested').length,
+          not_going:  attendees.filter(r => r.status === 'not_going').length,
         },
-        attendees: rows,
+        attendees,
       },
     });
   }
