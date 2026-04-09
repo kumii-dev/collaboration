@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../supabase.js';
-import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validation.js';
 import { sendEmail } from '../services/email.js';
 import logger from '../logger.js';
@@ -538,5 +538,60 @@ router.get('/reminders/due', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// ── GET /api/events/:id/rsvps/attendees  (admin only) ────────────────────────
+// Returns full attendee list with profile details for admin RSVP management.
+router.get('/:id/rsvps/attendees', authenticate, requireAdmin,
+  async (req: AuthRequest, res) => {
+    const { id } = req.params;
+
+    const { data: event, error: eventErr } = await supabaseAdmin
+      .from('community_events')
+      .select('id, title')
+      .eq('id', id)
+      .single();
+
+    if (eventErr || !event)
+      return res.status(404).json({ success: false, error: 'Event not found.' });
+
+    const { data, error } = await supabaseAdmin
+      .from('event_rsvps')
+      .select(`
+        id,
+        status,
+        created_at,
+        user:profiles (
+          id,
+          full_name,
+          email,
+          industry,
+          avatar_url
+        )
+      `)
+      .eq('event_id', id)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      logger.error('GET /events/:id/rsvps/attendees', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    const rows = data ?? [];
+    return res.json({
+      success: true,
+      data: {
+        event_id:    id,
+        event_title: event.title,
+        total:       rows.length,
+        counts: {
+          going:     rows.filter(r => r.status === 'going').length,
+          interested: rows.filter(r => r.status === 'interested').length,
+          not_going: rows.filter(r => r.status === 'not_going').length,
+        },
+        attendees: rows,
+      },
+    });
+  }
+);
 
 export default router;

@@ -7,6 +7,31 @@ export interface RsvpCounts {
   not_going: number;
 }
 
+export interface RsvpAttendee {
+  id:         string;
+  status:     'going' | 'interested' | 'not_going';
+  created_at: string;
+  user: {
+    id:         string;
+    full_name:  string | null;
+    email:      string;
+    industry:   string | null;
+    avatar_url: string | null;
+  };
+}
+
+export interface AttendeesResponse {
+  event_id:    string;
+  event_title: string;
+  total:       number;
+  counts: {
+    going:      number;
+    interested: number;
+    not_going:  number;
+  };
+  attendees: RsvpAttendee[];
+}
+
 export interface CommunityEvent {
   id: string;
   category_id: string;
@@ -56,8 +81,7 @@ export interface UpdateEventPayload {
 }
 
 // ── API calls (re-use the existing axios instance with auth interceptor) ──────
-export const eventsApi = {
-  list: async (categoryId?: string): Promise<CommunityEvent[]> => {
+export const eventsApi = {  list: async (categoryId?: string): Promise<CommunityEvent[]> => {
     const params = categoryId ? { category_id: categoryId } : {};
     const { data } = await api.get('/events', { params });
     return data.data;
@@ -103,5 +127,10 @@ export const eventsApi = {
 
   feature: async (eventId: string, featured: boolean): Promise<void> => {
     await api.patch(`/events/${eventId}/feature`, { featured });
+  },
+
+  getAttendees: async (eventId: string): Promise<AttendeesResponse> => {
+    const { data } = await api.get(`/events/${eventId}/rsvps/attendees`);
+    return data.data;
   },
 };

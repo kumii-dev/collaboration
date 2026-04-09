@@ -7,6 +7,7 @@ import {
 } from 'react-icons/bs';
 import { FiExternalLink } from 'react-icons/fi';
 import { CommunityEvent, RsvpCounts, UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
+import EventAttendeesPanel from './EventAttendeesPanel';
 
 interface Category { id: string; name: string; slug?: string; }
 
@@ -26,6 +27,7 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
   const [loading,     setLoading]     = useState(false);
   const [reminderSet, setReminderSet] = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+  const [activeTab,   setActiveTab]   = useState<'details' | 'attendees'>('details');
 
   // Edit mode state
   const [isEditing,   setIsEditing]   = useState(false);
@@ -60,6 +62,7 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
       setCounts(event.rsvp_counts);
       setReminderSet(false);
       setError(null);
+      setActiveTab('details');
       // Pre-fill edit form
       setIsEditing(false);
       setEditError(null);
@@ -232,6 +235,46 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
         </Modal.Header>
 
         <Modal.Body style={{ padding: '1.5rem' }}>
+          {/* ── Admin tab bar ── */}
+          {isAdmin && (
+            <div
+              className="d-flex"
+              style={{ borderBottom: '2px solid #E5E5E3', marginBottom: '1.25rem' }}
+            >
+              {([
+                { key: 'details'   as const, label: 'Details' },
+                { key: 'attendees' as const, label: `Attendees (${counts.going + counts.interested} RSVP'd)` },
+              ]).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  style={{
+                    padding:      '8px 20px',
+                    border:       'none',
+                    borderBottom: activeTab === tab.key
+                      ? '2px solid #7a8567'
+                      : '2px solid transparent',
+                    background:   'transparent',
+                    color:        activeTab === tab.key ? '#7a8567' : '#888',
+                    fontWeight:   activeTab === tab.key ? 700       : 400,
+                    fontSize:     14,
+                    cursor:       'pointer',
+                    marginBottom: '-2px',
+                    transition:   'color 0.15s',
+                    whiteSpace:   'nowrap',
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── Attendees panel (admin only) ── */}
+          {isAdmin && activeTab === 'attendees' ? (
+            <EventAttendeesPanel eventId={event.id} />
+          ) : (
+            <>
           {error && (
             <Alert variant="danger" dismissible onClose={() => setError(null)}>
               {error}
@@ -528,6 +571,8 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
               </div>
             </div>
           </div>
+          )}
+            </>
           )}
         </Modal.Body>
       </div>
