@@ -37,7 +37,7 @@ export default function EventAttendeesPanel({ eventId }: Props) {
       ...data.attendees.map(a => [
         a.user.full_name  ?? '',
         a.user.email,
-        a.user.industry   ?? '',
+        a.user.sector     ?? '',
         a.status,
         new Date(a.created_at).toLocaleDateString('en-ZA'),
       ]),
@@ -73,7 +73,7 @@ export default function EventAttendeesPanel({ eventId }: Props) {
     const matchSearch = !search
       || (a.user.full_name ?? '').toLowerCase().includes(q)
       || a.user.email.toLowerCase().includes(q)
-      || (a.user.industry ?? '').toLowerCase().includes(q);
+      || (a.user.sector ?? '').toLowerCase().includes(q);
     return matchStatus && matchSearch;
   });
 
@@ -232,8 +232,8 @@ export default function EventAttendeesPanel({ eventId }: Props) {
                     <td style={{ ...td, color: '#666' }}>{a.user.email}</td>
 
                     <td style={{ ...td, color: '#666' }}>
-                      {a.user.industry
-                        ? a.user.industry
+                      {a.user.sector
+                        ? a.user.sector
                         : <span style={{ color: '#ccc', fontStyle: 'italic' }}>Not specified</span>}
                     </td>
 

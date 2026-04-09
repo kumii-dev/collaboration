@@ -15,7 +15,7 @@ export interface RsvpAttendee {
     id:         string;
     full_name:  string | null;
     email:      string;
-    industry:   string | null;
+    sector:     string | null;
     avatar_url: string | null;
   };
 }

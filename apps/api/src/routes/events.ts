@@ -555,16 +555,16 @@ router.get('/:id/rsvps/attendees', authenticate, requireAdmin,
       return res.status(404).json({ success: false, error: 'Event not found.' });
 
     const { data, error } = await supabaseAdmin
-      .from('event_rsvps')
+      .from('community_event_rsvps')
       .select(`
         id,
         status,
         created_at,
-        user:profiles (
+        user:profiles!community_event_rsvps_user_id_fkey_profiles (
           id,
           full_name,
           email,
-          industry,
+          sector,
           avatar_url
         )
       `)
