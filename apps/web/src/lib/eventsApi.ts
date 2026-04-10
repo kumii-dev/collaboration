@@ -80,9 +80,13 @@ export interface UpdateEventPayload {
   is_featured?: boolean;
 }
 
+export type EventView = 'upcoming' | 'past' | 'all';
+
 // ── API calls (re-use the existing axios instance with auth interceptor) ──────
-export const eventsApi = {  list: async (categoryId?: string): Promise<CommunityEvent[]> => {
-    const params = categoryId ? { category_id: categoryId } : {};
+export const eventsApi = {
+  list: async (categoryId?: string, view: EventView = 'all'): Promise<CommunityEvent[]> => {
+    const params: Record<string, string> = { view };
+    if (categoryId) params.category_id = categoryId;
     const { data } = await api.get('/events', { params });
     return data.data;
   },

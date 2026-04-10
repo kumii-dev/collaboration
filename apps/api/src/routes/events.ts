@@ -150,19 +150,33 @@ router.patch(
 
 /**
  * GET /api/events
- * List upcoming events. Optional ?category_id=<uuid>
+ * List events. Optional ?category_id=<uuid>&view=upcoming|past|all (default: all)
+ * - upcoming: starts_at >= now, ascending
+ * - past:     starts_at <  now, descending (most recent first)
+ * - all:      no time filter, descending by starts_at
  */
 router.get('/', authenticate, async (req: AuthRequest, res) => {
   try {
-    const { category_id, limit = '20', offset = '0' } = req.query as Record<string, string>;
+    const { category_id, view = 'all', limit = '50', offset = '0' } = req.query as Record<string, string>;
+    const now = new Date().toISOString();
+
     let query = supabaseAdmin
       .from('community_events')
       .select(EVENT_SELECT)
-      .eq('is_cancelled', false)
-      .gte('starts_at', new Date().toISOString())
-      .order('starts_at', { ascending: true })
-      .range(Number(offset), Number(offset) + Number(limit) - 1);
+      .eq('is_cancelled', false);
+
+    if (view === 'upcoming') {
+      query = query.gte('starts_at', now).order('starts_at', { ascending: true });
+    } else if (view === 'past') {
+      query = query.lt('starts_at', now).order('starts_at', { ascending: false });
+    } else {
+      // 'all' — show every event, most recent starts_at first
+      query = query.order('starts_at', { ascending: false });
+    }
+
+    query = query.range(Number(offset), Number(offset) + Number(limit) - 1);
     if (category_id) query = query.eq('category_id', category_id);
+
     const { data, error } = await query;
     if (error) throw error;
     const userId = req.user!.id;

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from 'react-query';
 import { Row, Col, Spinner, Alert, Button, Form, InputGroup, Badge } from 'react-bootstrap';
 import { FiCalendar, FiSearch, FiFilter } from 'react-icons/fi';
 import { BsCalendarPlus } from 'react-icons/bs';
-import { eventsApi, CommunityEvent, RsvpCounts } from '../../lib/eventsApi';
+import { eventsApi, CommunityEvent, RsvpCounts, EventView } from '../../lib/eventsApi';
 import EventCard from '../../components/events/EventCard';
 import EventDetailModal from '../../components/events/EventDetailModal';
 import CreateEventModal from '../../components/events/CreateEventModal';
@@ -22,6 +22,7 @@ export default function EventsPage() {
 
   const [search,          setSearch]          = useState('');
   const [categoryFilter,  setCategoryFilter]  = useState<string>('');
+  const [view,            setView]            = useState<EventView>('upcoming');
   const [selectedEvent,   setSelectedEvent]   = useState<CommunityEvent | null>(null);
   const [showDetail,      setShowDetail]      = useState(false);
   const [showCreate,      setShowCreate]      = useState(false);
@@ -29,8 +30,8 @@ export default function EventsPage() {
   const queryClient = useQueryClient();
 
   const { data: events = [], isLoading, error } = useQuery<CommunityEvent[]>(
-    'all-events',
-    () => eventsApi.list(),
+    ['all-events', view],
+    () => eventsApi.list(undefined, view),
     { staleTime: 30_000 }
   );
 
@@ -44,7 +45,7 @@ export default function EventsPage() {
   );
 
   const handleRsvpChange = (eventId: string, status: string | null, counts: RsvpCounts) => {
-    queryClient.setQueryData<CommunityEvent[]>('all-events', (prev = []) =>
+    queryClient.setQueryData<CommunityEvent[]>(['all-events', view], (prev = []) =>
       prev.map(e =>
         e.id === eventId
           ? { ...e, user_rsvp: status as CommunityEvent['user_rsvp'], rsvp_counts: counts }
@@ -59,11 +60,11 @@ export default function EventsPage() {
   };
 
   const handleEventCreated = (event: CommunityEvent) => {
-    queryClient.setQueryData<CommunityEvent[]>('all-events', (prev = []) => [event, ...prev]);
+    queryClient.setQueryData<CommunityEvent[]>(['all-events', view], (prev = []) => [event, ...prev]);
   };
 
   const handleEventUpdated = (event: CommunityEvent) => {
-    queryClient.setQueryData<CommunityEvent[]>('all-events', (prev = []) =>
+    queryClient.setQueryData<CommunityEvent[]>(['all-events', view], (prev = []) =>
       prev.map(e => e.id === event.id ? event : e)
     );
     setSelectedEvent(event);
@@ -88,7 +89,7 @@ export default function EventsPage() {
             <div className="d-inline-flex align-items-center gap-2 mb-2 px-3 py-1"
                  style={{ background: '#E5E5E3', borderRadius: '20px', fontSize: '13px' }}>
               <FiCalendar size={14} />
-              <span>Upcoming community events</span>
+              <span>Community events</span>
             </div>
             <h1 style={{ fontSize: '2.5rem', fontWeight: 300, color: '#7a8567', letterSpacing: '-1px', marginBottom: 0 }}>
               Events
@@ -112,6 +113,29 @@ export default function EventsPage() {
               <BsCalendarPlus className="me-2" />Create Event
             </Button>
           )}
+        </div>
+
+        {/* ── View tabs: Upcoming / Past / All ────────────────────────── */}
+        <div className="d-flex gap-2 mb-4">
+          {(['upcoming', 'past', 'all'] as EventView[]).map(v => (
+            <button
+              key={v}
+              onClick={() => { setView(v); setSearch(''); setCategoryFilter(''); }}
+              style={{
+                padding: '6px 18px',
+                borderRadius: '20px',
+                border: view === v ? '1.5px solid #7a8567' : '1.5px solid #dee2e6',
+                background: view === v ? '#f0f4ea' : '#fff',
+                color: view === v ? '#7a8567' : '#666',
+                fontWeight: view === v ? 700 : 400,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                textTransform: 'capitalize',
+              }}
+            >
+              {v === 'upcoming' ? '⏳ Upcoming' : v === 'past' ? '📁 Past' : '📋 All Events'}
+            </button>
+          ))}
         </div>
 
         {/* ── Filters ────────────────────────────────────────────────── */}
@@ -156,8 +180,8 @@ export default function EventsPage() {
           )}
         </div>
 
-        {/* ── Featured strip ─────────────────────────────────────────── */}
-        {!search && !categoryFilter && featuredCount > 0 && (
+        {/* ── Featured strip — only shown for upcoming/all ───────────── */}
+        {!search && !categoryFilter && featuredCount > 0 && view !== 'past' && (
           <div className="mb-4">
             <h5 style={{ fontWeight: 700, color: '#2D2D2D', marginBottom: '1rem' }}>
               ⭐ Featured
@@ -194,7 +218,13 @@ export default function EventsPage() {
             <FiCalendar size={48} color="#c5df96" style={{ marginBottom: '1rem' }} />
             <h5 style={{ color: '#555', fontWeight: 600 }}>No events found</h5>
             <p style={{ color: '#888' }}>
-              {search || categoryFilter ? 'Try adjusting your filters.' : 'No upcoming events yet.'}
+              {search || categoryFilter
+                ? 'Try adjusting your filters.'
+                : view === 'past'
+                ? 'No past events yet.'
+                : view === 'upcoming'
+                ? 'No upcoming events scheduled.'
+                : 'No events yet.'}
             </p>
             {isAdmin && (
               <Button
@@ -209,18 +239,26 @@ export default function EventsPage() {
           <>
             {(search || categoryFilter || featuredCount === 0) && (
               <h5 style={{ fontWeight: 700, color: '#2D2D2D', marginBottom: '1rem' }}>
-                {search || categoryFilter ? `Results (${filtered.length})` : 'All Events'}
+                {search || categoryFilter
+                  ? `Results (${filtered.length})`
+                  : view === 'past'
+                  ? `Past Events (${filtered.length})`
+                  : view === 'upcoming'
+                  ? `Upcoming Events (${filtered.length})`
+                  : 'All Events'}
               </h5>
             )}
             {(search || categoryFilter) ? (
               <Row>
                 {filtered.map(event => (
                   <Col md={6} lg={4} key={event.id} className="mb-4">
-                    <EventCard
-                      event={event}
-                      onRsvpChange={handleRsvpChange}
-                      onViewDetails={e => { setSelectedEvent(e); setShowDetail(true); }}
-                    />
+                    <div style={{ opacity: view === 'past' ? 0.75 : 1 }}>
+                      <EventCard
+                        event={event}
+                        onRsvpChange={handleRsvpChange}
+                        onViewDetails={e => { setSelectedEvent(e); setShowDetail(true); }}
+                      />
+                    </div>
                   </Col>
                 ))}
               </Row>
@@ -229,7 +267,7 @@ export default function EventsPage() {
                 {/* Non-featured events below the featured strip */}
                 {filtered.filter(e => !e.is_featured).length > 0 && (
                   <>
-                    {featuredCount > 0 && (
+                    {featuredCount > 0 && view !== 'past' && (
                       <h5 style={{ fontWeight: 700, color: '#2D2D2D', marginBottom: '1rem' }}>
                         All Events
                       </h5>
@@ -237,11 +275,13 @@ export default function EventsPage() {
                     <Row>
                       {filtered.filter(e => !e.is_featured).map(event => (
                         <Col md={6} lg={4} key={event.id} className="mb-4">
-                          <EventCard
-                            event={event}
-                            onRsvpChange={handleRsvpChange}
-                            onViewDetails={e => { setSelectedEvent(e); setShowDetail(true); }}
-                          />
+                          <div style={{ opacity: view === 'past' ? 0.75 : 1 }}>
+                            <EventCard
+                              event={event}
+                              onRsvpChange={handleRsvpChange}
+                              onViewDetails={e => { setSelectedEvent(e); setShowDetail(true); }}
+                            />
+                          </div>
                         </Col>
                       ))}
                     </Row>
