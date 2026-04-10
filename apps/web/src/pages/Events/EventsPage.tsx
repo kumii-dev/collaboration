@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from 'react-query';
 import { Row, Col, Spinner, Alert, Button, Form, InputGroup, Badge } from 'react-bootstrap';
-import { FiCalendar, FiSearch, FiFilter } from 'react-icons/fi';
+import { FiCalendar, FiSearch, FiFilter, FiClock, FiArchive, FiList } from 'react-icons/fi';
 import { BsCalendarPlus } from 'react-icons/bs';
 import { eventsApi, CommunityEvent, RsvpCounts, EventView } from '../../lib/eventsApi';
 import EventCard from '../../components/events/EventCard';
@@ -133,7 +133,11 @@ export default function EventsPage() {
                 textTransform: 'capitalize',
               }}
             >
-              {v === 'upcoming' ? '⏳ Upcoming' : v === 'past' ? '📁 Past' : '📋 All Events'}
+              {v === 'upcoming'
+                ? <><FiClock size={13} className="me-1" />Upcoming</>
+                : v === 'past'
+                ? <><FiArchive size={13} className="me-1" />Past</>
+                : <><FiList size={13} className="me-1" />All Events</>}
             </button>
           ))}
         </div>
