@@ -84,30 +84,47 @@ const EVENT_SELECT = `
 
 /**
  * GET /api/events/featured
- * Returns upcoming featured events (is_featured = true, not cancelled).
- * Limit defaults to 6, max 20.
+ * Returns featured events (is_featured = true, not cancelled) across all communities.
+ * Includes both upcoming and past so they persist on the forum page.
+ * Limit defaults to 6, max 20. Ordered: upcoming first, then most-recent past.
  */
 router.get('/featured', authenticate, async (req: AuthRequest, res) => {
   try {
     const limit  = Math.min(Number(req.query.limit ?? 6), 20);
     const userId = req.user!.id;
-    const { data, error } = await supabaseAdmin
-      .from('community_events')
-      .select(EVENT_SELECT)
-      .eq('is_featured', true)
-      .eq('is_cancelled', false)
-      .gte('starts_at', new Date().toISOString())
-      .order('starts_at', { ascending: true })
-      .limit(limit);
-    if (error) {
-      // If is_featured column doesn't exist yet (migration not run), return empty gracefully
-      if (error.message?.includes('is_featured') || error.code === '42703') {
+    const now    = new Date().toISOString();
+
+    // Fetch upcoming featured (ascending) + past featured (descending) separately, merge
+    const [upcomingRes, pastRes] = await Promise.all([
+      supabaseAdmin
+        .from('community_events')
+        .select(EVENT_SELECT)
+        .eq('is_featured', true)
+        .eq('is_cancelled', false)
+        .gte('starts_at', now)
+        .order('starts_at', { ascending: true })
+        .limit(limit),
+      supabaseAdmin
+        .from('community_events')
+        .select(EVENT_SELECT)
+        .eq('is_featured', true)
+        .eq('is_cancelled', false)
+        .lt('starts_at', now)
+        .order('starts_at', { ascending: false })
+        .limit(limit),
+    ]);
+
+    if (upcomingRes.error) {
+      if (upcomingRes.error.message?.includes('is_featured') || upcomingRes.error.code === '42703') {
         logger.warn('GET /events/featured: is_featured column missing — run migration 009_featured_events.sql');
         return res.json({ success: true, data: [] });
       }
-      throw error;
+      throw upcomingRes.error;
     }
-    res.json({ success: true, data: (data ?? []).map(e => mapEvent(e, userId)) });
+    if (pastRes.error) throw pastRes.error;
+
+    const merged = [...(upcomingRes.data ?? []), ...(pastRes.data ?? [])].slice(0, limit);
+    res.json({ success: true, data: merged.map(e => mapEvent(e, userId)) });
   } catch (err: any) {
     logger.error('GET /events/featured', err);
     res.status(500).json({ success: false, error: err.message });
