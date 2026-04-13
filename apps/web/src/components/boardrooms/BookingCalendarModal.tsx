@@ -97,12 +97,33 @@ export default function BookingCalendarModal({ show, onHide, boardroom }: Props)
       <Modal.Body>
         {success ? (
           <div className="text-center py-4">
-            <div style={{ fontSize: 48 }}>✅</div>
-            <h5 className="mt-3" style={{ color: '#7a8567' }}>Booking Confirmed!</h5>
-            <p className="text-muted">
-              You'll receive a notification 60 and 30 minutes before your booking.
+            <div style={{ fontSize: 48 }}>🕐</div>
+            <h5 className="mt-3 mb-1" style={{ color: '#7a8567' }}>Slot Requested!</h5>
+            <p className="text-muted mb-3" style={{ fontSize: 14 }}>
+              Your slot is reserved pending payment confirmation.
             </p>
-            <Button style={BTN_STYLE} onClick={handleClose}>Close</Button>
+            <div
+              style={{
+                background: '#f0f4ea',
+                border: '1px solid #c5df96',
+                borderRadius: 10,
+                padding: '14px 16px',
+                textAlign: 'left',
+                marginBottom: 20,
+                fontSize: 13,
+              }}
+            >
+              <p className="mb-2" style={{ fontWeight: 700, color: '#7a8567' }}>Next steps:</p>
+              <ol className="mb-0 ps-3" style={{ color: '#555', lineHeight: 1.8 }}>
+                <li>Make your payment using the details provided by 22 On Sloane.</li>
+                <li>Take a screenshot or note your payment reference.</li>
+                <li>Go to <strong>My Bookings</strong> and click <strong>"Submit Payment Proof"</strong> on this booking.</li>
+                <li>An admin will review and confirm your slot — you'll receive a notification.</li>
+              </ol>
+            </div>
+            <Button style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }} onClick={handleClose}>
+              View My Bookings
+            </Button>
           </div>
         ) : (
           <>
@@ -230,8 +251,8 @@ export default function BookingCalendarModal({ show, onHide, boardroom }: Props)
             disabled={!selected || bookMutation.isLoading}
           >
             {bookMutation.isLoading
-              ? <><Spinner size="sm" animation="border" className="me-2" />Booking…</>
-              : 'Confirm Booking'}
+              ? <><Spinner size="sm" animation="border" className="me-2" />Requesting…</>
+              : 'Request Slot'}
           </Button>
         </Modal.Footer>
       )}

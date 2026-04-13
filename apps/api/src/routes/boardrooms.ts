@@ -32,6 +32,18 @@ const createBookingSchema = z.object({
   notes:        z.string().max(500).optional(),
 });
 
+const submitPaymentSchema = z.object({
+  payment_proof_url: z.string().url().optional().or(z.literal('')),
+  payment_reference: z.string().max(200).optional(),
+}).refine(d => d.payment_proof_url || d.payment_reference, {
+  message: 'Provide either a payment proof URL or a reference number',
+});
+
+const approveBookingSchema = z.object({
+  approve: z.boolean(),
+  rejection_reason: z.string().max(500).optional(),
+});
+
 const availabilityQuerySchema = z.object({
   boardroom_id: z.string().uuid(),
   date:         z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
@@ -126,30 +138,31 @@ router.get(
       const slots    = generateDaySlots(date);
       const slotUTCs = slots.map(s => s.toISOString());
 
-      // Fetch confirmed bookings for those slots
+      // Fetch bookings that hold the slot (awaiting_approval or confirmed)
       const { data: bookings, error } = await supabaseAdmin
         .from('boardroom_bookings')
-        .select('slot_start, user_id')
+        .select('slot_start, user_id, status')
         .eq('boardroom_id', boardroom_id)
-        .eq('status', 'confirmed')
+        .in('status', ['awaiting_approval', 'confirmed'])
         .in('slot_start', slotUTCs);
 
       if (error) throw error;
 
-      const bookedMap = new Map<string, string>(
-        (bookings ?? []).map(b => [new Date(b.slot_start).toISOString(), b.user_id])
+      const bookedMap = new Map<string, { user_id: string; status: string }>(
+        (bookings ?? []).map(b => [new Date(b.slot_start).toISOString(), { user_id: b.user_id, status: b.status }])
       );
 
       const result = slots.map(slot => {
-        const iso      = slot.toISOString();
-        const bookedBy = bookedMap.get(iso);
-        const sast     = new Date(slot.getTime() + 2 * 60 * 60 * 1000);
-        const label    = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00`;
+        const iso    = slot.toISOString();
+        const entry  = bookedMap.get(iso);
+        const sast   = new Date(slot.getTime() + 2 * 60 * 60 * 1000);
+        const label  = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00`;
         return {
-          slot_start: iso,
+          slot_start:  iso,
           label,
-          available:   !bookedBy,
-          is_mine:     bookedBy === req.user!.id,
+          available:   !entry,
+          is_mine:     entry?.user_id === req.user!.id,
+          held_status: entry?.status ?? null,   // 'awaiting_approval' | 'confirmed' | null
         };
       });
 
@@ -163,7 +176,7 @@ router.get(
 
 /**
  * GET /api/boardrooms/bookings/mine
- * Returns the authenticated user's upcoming confirmed bookings.
+ * Returns ALL of the authenticated user's bookings across all statuses and time ranges.
  */
 router.get('/bookings/mine', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -171,12 +184,12 @@ router.get('/bookings/mine', authenticate, async (req: AuthRequest, res) => {
       .from('boardroom_bookings')
       .select(`
         id, boardroom_id, slot_start, slot_end, status, notes, created_at,
+        payment_proof_url, payment_reference, payment_submitted_at,
+        approved_by, approved_at, rejection_reason,
         boardrooms ( id, name, image_url, capacity )
       `)
       .eq('user_id', req.user!.id)
-      .eq('status', 'confirmed')
-      .gte('slot_start', new Date().toISOString())
-      .order('slot_start', { ascending: true });
+      .order('slot_start', { ascending: false });
 
     if (error) throw error;
     res.json({ success: true, data: data ?? [] });
@@ -187,8 +200,8 @@ router.get('/bookings/mine', authenticate, async (req: AuthRequest, res) => {
 });
 
 /**
- * GET /api/boardrooms/bookings/all   (admin only)
- * Returns all upcoming confirmed bookings with user info.
+ * GET /api/boardrooms/bookings/all   (admin/moderator only)
+ * Returns all bookings: pending/awaiting_approval queue first, then upcoming confirmed.
  */
 router.get(
   '/bookings/all',
@@ -200,15 +213,23 @@ router.get(
         .from('boardroom_bookings')
         .select(`
           id, boardroom_id, slot_start, slot_end, status, notes, created_at,
+          payment_proof_url, payment_reference, payment_submitted_at,
+          approved_by, approved_at, rejection_reason,
           boardrooms ( id, name, capacity ),
           profiles!boardroom_bookings_user_id_fkey ( id, full_name, email, avatar_url )
         `)
-        .eq('status', 'confirmed')
-        .gte('slot_start', new Date().toISOString())
+        .in('status', ['pending', 'awaiting_approval', 'confirmed'])
+        .order('payment_submitted_at', { ascending: true, nullsFirst: false })
         .order('slot_start', { ascending: true });
 
       if (error) throw error;
-      res.json({ success: true, data: data ?? [] });
+
+      // Sort: awaiting_approval → pending → confirmed (future)
+      const priority = (s: string) =>
+        s === 'awaiting_approval' ? 0 : s === 'pending' ? 1 : 2;
+      const sorted = (data ?? []).sort((a, b) => priority(a.status) - priority(b.status));
+
+      res.json({ success: true, data: sorted });
     } catch (err: any) {
       logger.error('GET /boardrooms/bookings/all', err);
       res.status(500).json({ success: false, error: err.message });
@@ -389,33 +410,33 @@ router.post(
         return res.status(400).json({ success: false, error: 'This boardroom is not currently available for booking' });
       }
 
-      // Check for conflicting confirmed booking
+      // Check for conflicting slot (awaiting_approval OR confirmed already holds the slot)
       const { data: conflict } = await supabaseAdmin
         .from('boardroom_bookings')
         .select('id')
         .eq('boardroom_id', boardroom_id)
         .eq('slot_start', slotDate.toISOString())
-        .eq('status', 'confirmed')
+        .in('status', ['awaiting_approval', 'confirmed'])
         .maybeSingle();
 
       if (conflict) {
-        return res.status(409).json({ success: false, error: 'This slot is already booked. Please choose another time.' });
+        return res.status(409).json({ success: false, error: 'This slot is already held or confirmed. Please choose another time.' });
       }
 
-      // Check user doesn't have another booking at the same time (different room)
+      // Check user doesn't have another active booking at the same time (different room)
       const { data: sameTimeConflict } = await supabaseAdmin
         .from('boardroom_bookings')
         .select('id')
         .eq('user_id', req.user!.id)
         .eq('slot_start', slotDate.toISOString())
-        .eq('status', 'confirmed')
+        .in('status', ['pending', 'awaiting_approval', 'confirmed'])
         .maybeSingle();
 
       if (sameTimeConflict) {
         return res.status(409).json({ success: false, error: 'You already have a boardroom booking at this time.' });
       }
 
-      // Insert booking
+      // Insert booking as 'pending' — slot is NOT held until payment proof is submitted
       const slotEnd = new Date(slotDate.getTime() + 60 * 60 * 1000);
       const { data: booking, error: bookingError } = await supabaseAdmin
         .from('boardroom_bookings')
@@ -425,7 +446,7 @@ router.post(
           slot_start: slotDate.toISOString(),
           slot_end:   slotEnd.toISOString(),
           notes:      notes ?? null,
-          status:     'confirmed',
+          status:     'pending',
         })
         .select('*')
         .single();
@@ -437,12 +458,12 @@ router.post(
       const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
       const dateLabel = sast.toUTCString().slice(0, 16);
 
-      // Send confirmation notification
+      // Notify the user — slot is reserved pending payment
       await supabaseAdmin.from('notifications').insert({
         user_id: req.user!.id,
-        type:    'boardroom_booking_confirmed',
-        title:   `Boardroom booked: ${room.name}`,
-        message: `Your booking for ${room.name} on ${dateLabel} at ${slotLabel} is confirmed.`,
+        type:    'boardroom_booking_confirmed',   // reuse existing type for now
+        title:   `Boardroom slot requested: ${room.name}`,
+        message: `Your booking request for ${room.name} on ${dateLabel} at ${slotLabel} is pending. Please submit payment proof to confirm your slot.`,
         data:    {
           booking_id:  booking.id,
           room_name:   room.name,
@@ -451,10 +472,211 @@ router.post(
         },
       });
 
-      logger.info('Boardroom booked', { bookingId: booking.id, userId: req.user!.id, roomId: boardroom_id });
+      // Notify admins of new pending booking request
+      await supabaseAdmin.rpc('notify_admins_boardroom', {
+        p_type:    'boardroom_booking_awaiting_approval',
+        p_title:   `New boardroom request: ${room.name}`,
+        p_message: `A new booking request for ${room.name} on ${dateLabel} at ${slotLabel} is awaiting payment submission.`,
+        p_data:    {
+          booking_id:  booking.id,
+          room_name:   room.name,
+          slot_start:  slotDate.toISOString(),
+          slot_label:  slotLabel,
+          user_id:     req.user!.id,
+        },
+      });
+
+      logger.info('Boardroom booking requested (pending)', { bookingId: booking.id, userId: req.user!.id, roomId: boardroom_id });
       res.status(201).json({ success: true, data: booking });
     } catch (err: any) {
       logger.error('POST /boardrooms/bookings', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+/**
+ * PATCH /api/boardrooms/bookings/:id/submit-payment   (authenticated — booking owner)
+ * User submits payment proof. Moves booking from 'pending' → 'awaiting_approval'.
+ * This is the moment the slot is held in the unique index.
+ */
+router.patch(
+  '/bookings/:id/submit-payment',
+  authenticate,
+  validateParams(idSchema),
+  validateBody(submitPaymentSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const body = req.body as z.infer<typeof submitPaymentSchema>;
+
+      // Fetch the booking
+      const { data: booking, error: fetchError } = await supabaseAdmin
+        .from('boardroom_bookings')
+        .select(`id, user_id, slot_start, status, boardrooms ( id, name )`)
+        .eq('id', id)
+        .single();
+
+      if (fetchError || !booking) {
+        return res.status(404).json({ success: false, error: 'Booking not found' });
+      }
+      if (booking.user_id !== req.user!.id) {
+        return res.status(403).json({ success: false, error: 'You can only submit payment for your own bookings' });
+      }
+      if (booking.status !== 'pending') {
+        return res.status(400).json({ success: false, error: `Cannot submit payment for a booking with status '${booking.status}'` });
+      }
+
+      // Update to awaiting_approval — slot is now held
+      const now = new Date().toISOString();
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('boardroom_bookings')
+        .update({
+          status:                'awaiting_approval',
+          payment_proof_url:     body.payment_proof_url ?? null,
+          payment_reference:     body.payment_reference ?? null,
+          payment_submitted_at:  now,
+          updated_at:            now,
+        })
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (updateError) throw updateError;
+
+      const room      = (booking as any).boardrooms ?? {};
+      const slotDate  = new Date(booking.slot_start);
+      const sast      = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000);
+      const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
+      const dateLabel = sast.toUTCString().slice(0, 16);
+
+      // Notify the user: payment received, awaiting admin review
+      await supabaseAdmin.from('notifications').insert({
+        user_id: req.user!.id,
+        type:    'boardroom_payment_received',
+        title:   `Payment received — ${room.name ?? 'Boardroom'}`,
+        message: `Your payment proof for ${room.name ?? 'the boardroom'} on ${dateLabel} at ${slotLabel} has been received. An admin will review and confirm your booking shortly.`,
+        data:    { booking_id: id, room_name: room.name ?? '', slot_start: booking.slot_start, slot_label: slotLabel },
+      });
+
+      // Notify admins: payment proof submitted, needs review
+      await supabaseAdmin.rpc('notify_admins_boardroom', {
+        p_type:    'boardroom_booking_awaiting_approval',
+        p_title:   `Payment proof received — ${room.name ?? 'Boardroom'}`,
+        p_message: `Payment proof submitted for ${room.name ?? 'a boardroom'} on ${dateLabel} at ${slotLabel}. Please review and approve.`,
+        p_data:    {
+          booking_id:        id,
+          room_name:         room.name ?? '',
+          slot_start:        booking.slot_start,
+          slot_label:        slotLabel,
+          payment_proof_url: body.payment_proof_url ?? null,
+          payment_reference: body.payment_reference ?? null,
+          user_id:           req.user!.id,
+        },
+      });
+
+      logger.info('Payment proof submitted', { bookingId: id, userId: req.user!.id });
+      res.json({ success: true, data: updated });
+    } catch (err: any) {
+      logger.error('PATCH /boardrooms/bookings/:id/submit-payment', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+/**
+ * PATCH /api/boardrooms/bookings/:id/approve   (admin/moderator only)
+ * Admin approves or rejects a booking that is 'awaiting_approval'.
+ * approve=true  → status: 'confirmed'
+ * approve=false → status: 'rejected', rejection_reason required
+ */
+router.patch(
+  '/bookings/:id/approve',
+  authenticate,
+  requireModerator,
+  validateParams(idSchema),
+  validateBody(approveBookingSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { approve, rejection_reason } = req.body as z.infer<typeof approveBookingSchema>;
+
+      if (!approve && !rejection_reason) {
+        return res.status(400).json({ success: false, error: 'A rejection reason is required when rejecting a booking' });
+      }
+
+      // Fetch the booking
+      const { data: booking, error: fetchError } = await supabaseAdmin
+        .from('boardroom_bookings')
+        .select(`id, user_id, slot_start, status, boardrooms ( id, name )`)
+        .eq('id', id)
+        .single();
+
+      if (fetchError || !booking) {
+        return res.status(404).json({ success: false, error: 'Booking not found' });
+      }
+      if (booking.status !== 'awaiting_approval') {
+        return res.status(400).json({ success: false, error: `Booking is not awaiting approval (current status: '${booking.status}')` });
+      }
+
+      const now     = new Date().toISOString();
+      const room    = (booking as any).boardrooms ?? {};
+      const newStatus = approve ? 'confirmed' : 'rejected';
+
+      const updatePayload: Record<string, any> = {
+        status:      newStatus,
+        approved_by: req.user!.id,
+        approved_at: now,
+        updated_at:  now,
+      };
+      if (!approve && rejection_reason) {
+        updatePayload.rejection_reason = rejection_reason;
+      }
+
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('boardroom_bookings')
+        .update(updatePayload)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (updateError) throw updateError;
+
+      const slotDate  = new Date(booking.slot_start);
+      const sast      = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000);
+      const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
+      const dateLabel = sast.toUTCString().slice(0, 16);
+
+      if (approve) {
+        // Notify user: booking is confirmed
+        await supabaseAdmin.from('notifications').insert({
+          user_id: booking.user_id,
+          type:    'boardroom_booking_confirmed',
+          title:   `Booking confirmed — ${room.name ?? 'Boardroom'}`,
+          message: `Your booking for ${room.name ?? 'the boardroom'} on ${dateLabel} at ${slotLabel} has been approved and confirmed!`,
+          data:    { booking_id: id, room_name: room.name ?? '', slot_start: booking.slot_start, slot_label: slotLabel },
+        });
+      } else {
+        // Notify user: booking is rejected with reason
+        await supabaseAdmin.from('notifications').insert({
+          user_id: booking.user_id,
+          type:    'boardroom_booking_rejected',
+          title:   `Booking rejected — ${room.name ?? 'Boardroom'}`,
+          message: `Your booking for ${room.name ?? 'the boardroom'} on ${dateLabel} at ${slotLabel} was not approved. Reason: ${rejection_reason}`,
+          data:    {
+            booking_id:       id,
+            room_name:        room.name ?? '',
+            slot_start:       booking.slot_start,
+            slot_label:       slotLabel,
+            rejection_reason: rejection_reason ?? '',
+          },
+        });
+      }
+
+      logger.info(`Booking ${newStatus}`, { bookingId: id, adminId: req.user!.id, approve });
+      res.json({ success: true, data: updated });
+    } catch (err: any) {
+      logger.error('PATCH /boardrooms/bookings/:id/approve', err);
       res.status(500).json({ success: false, error: err.message });
     }
   }
@@ -493,6 +715,9 @@ router.patch(
 
       if (booking.status === 'cancelled') {
         return res.status(400).json({ success: false, error: 'Booking is already cancelled' });
+      }
+      if (booking.status === 'rejected') {
+        return res.status(400).json({ success: false, error: 'Cannot cancel a rejected booking' });
       }
 
       // Update to cancelled

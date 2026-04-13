@@ -16,27 +16,42 @@ export interface Boardroom {
 }
 
 export interface BookingSlot {
-  slot_start: string; // ISO UTC
-  label:      string; // e.g. "09:00 – 10:00"
-  available:  boolean;
-  is_mine:    boolean;
+  slot_start:  string; // ISO UTC
+  label:       string; // e.g. "09:00 – 10:00"
+  available:   boolean;
+  is_mine:     boolean;
+  held_status: 'awaiting_approval' | 'confirmed' | null;
 }
 
+export type BookingStatus =
+  | 'pending'           // user requested slot — no payment yet, slot NOT held
+  | 'awaiting_approval' // payment proof submitted — slot IS held, admin must approve
+  | 'confirmed'         // admin approved
+  | 'rejected'          // admin rejected (see rejection_reason)
+  | 'cancelled';        // cancelled by user or admin
+
 export interface Booking {
-  id:           string;
-  boardroom_id: string;
-  user_id:      string;
-  slot_start:   string;
-  slot_end:     string;
-  status:       'confirmed' | 'cancelled';
-  notes:        string | null;
-  created_at:   string;
+  id:                    string;
+  boardroom_id:          string;
+  user_id:               string;
+  slot_start:            string;
+  slot_end:              string;
+  status:                BookingStatus;
+  notes:                 string | null;
+  created_at:            string;
+  // payment / approval fields
+  payment_proof_url:     string | null;
+  payment_reference:     string | null;
+  payment_submitted_at:  string | null;
+  approved_by:           string | null;
+  approved_at:           string | null;
+  rejection_reason:      string | null;
   boardrooms?:  Pick<Boardroom, 'id' | 'name' | 'image_url' | 'capacity'>;
   profiles?: {
-    id:          string;
-    full_name:   string | null;
-    email:       string;
-    avatar_url:  string | null;
+    id:         string;
+    full_name:  string | null;
+    email:      string;
+    avatar_url: string | null;
   };
 }
 
@@ -56,6 +71,16 @@ export interface CreateBookingPayload {
   boardroom_id: string;
   slot_start:   string;
   notes?:       string;
+}
+
+export interface SubmitPaymentPayload {
+  payment_proof_url?: string;
+  payment_reference?: string;
+}
+
+export interface ApproveBookingPayload {
+  approve:           boolean;
+  rejection_reason?: string;
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────
@@ -111,6 +136,16 @@ export async function createBooking(payload: CreateBookingPayload): Promise<Book
 
 export async function cancelBooking(id: string): Promise<Booking> {
   const res = await api.patch(`/boardrooms/bookings/${id}/cancel`);
+  return res.data.data;
+}
+
+export async function submitPayment(id: string, payload: SubmitPaymentPayload): Promise<Booking> {
+  const res = await api.patch(`/boardrooms/bookings/${id}/submit-payment`, payload);
+  return res.data.data;
+}
+
+export async function approveBooking(id: string, payload: ApproveBookingPayload): Promise<Booking> {
+  const res = await api.patch(`/boardrooms/bookings/${id}/approve`, payload);
   return res.data.data;
 }
 

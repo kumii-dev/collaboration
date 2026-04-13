@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Row, Col, Spinner, Alert, Button } from 'react-bootstrap';
+import { Row, Col, Spinner, Alert, Button, Badge } from 'react-bootstrap';
 import { FiPlus } from 'react-icons/fi';
 import { useQuery } from 'react-query';
-import { fetchBoardrooms } from '../../lib/boardroomApi';
+import { fetchBoardrooms, fetchAllBookings, Booking } from '../../lib/boardroomApi';
 import BoardroomCard from './BoardroomCard';
 import MyBookingsPanel from './MyBookingsPanel';
+import AdminBookingsPanel from './AdminBookingsPanel';
 import CreateBoardroomModal from './CreateBoardroomModal';
 
 interface Props {
@@ -13,9 +14,11 @@ interface Props {
 
 const BTN_STYLE = { background: '#7a8567', borderColor: '#7a8567', color: 'white' };
 
+type SubNav = 'rooms' | 'my-bookings' | 'approvals';
+
 export default function BoardroomsTab({ isAdmin }: Props) {
   const [showCreate, setShowCreate] = useState(false);
-  const [subNav,     setSubNav]     = useState<'rooms' | 'my-bookings'>('rooms');
+  const [subNav,     setSubNav]     = useState<SubNav>('rooms');
 
   const { data, isLoading, isError } = useQuery(
     'boardrooms',
@@ -23,13 +26,30 @@ export default function BoardroomsTab({ isAdmin }: Props) {
     { staleTime: 60_000 }
   );
 
-  const boardrooms = data?.data ?? [];
+  // Fetch all bookings for admins to compute badge count
+  const { data: allBookings } = useQuery<Booking[]>(
+    'all-bookings',
+    fetchAllBookings,
+    { staleTime: 30_000, enabled: isAdmin }
+  );
+
+  const boardrooms    = data?.data ?? [];
+  const pendingCount  = isAdmin
+    ? (allBookings ?? []).filter(b => b.status === 'awaiting_approval' || b.status === 'pending').length
+    : 0;
+
+  // Sub-nav items
+  const navItems: { key: SubNav; label: string }[] = [
+    { key: 'rooms',       label: 'Available Rooms' },
+    { key: 'my-bookings', label: 'My Bookings'     },
+    ...(isAdmin ? [{ key: 'approvals' as SubNav, label: 'Approvals' }] : []),
+  ];
 
   return (
     <div>
       {/* ── Sub-navigation ── */}
       <div
-        className="d-flex gap-1 mb-4"
+        className="d-flex gap-1 mb-4 flex-wrap"
         style={{
           background: 'white',
           border: '1px solid #E5E5E3',
@@ -38,10 +58,7 @@ export default function BoardroomsTab({ isAdmin }: Props) {
           width: 'fit-content',
         }}
       >
-        {([
-          { key: 'rooms',       label: 'Available Rooms' },
-          { key: 'my-bookings', label: 'My Bookings'     },
-        ] as const).map(({ key, label }) => (
+        {navItems.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setSubNav(key)}
@@ -57,9 +74,17 @@ export default function BoardroomsTab({ isAdmin }: Props) {
                 : 'transparent',
               color: subNav === key ? 'white' : '#666',
               transition: 'all 0.15s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
             }}
           >
             {label}
+            {key === 'approvals' && pendingCount > 0 && (
+              <Badge bg="danger" style={{ fontSize: 10, padding: '2px 6px' }}>
+                {pendingCount}
+              </Badge>
+            )}
           </button>
         ))}
       </div>
@@ -132,6 +157,11 @@ export default function BoardroomsTab({ isAdmin }: Props) {
       {/* ── My Bookings ── */}
       {subNav === 'my-bookings' && (
         <MyBookingsPanel isAdmin={isAdmin} />
+      )}
+
+      {/* ── Approvals (admin only) ── */}
+      {subNav === 'approvals' && isAdmin && (
+        <AdminBookingsPanel />
       )}
     </div>
   );
