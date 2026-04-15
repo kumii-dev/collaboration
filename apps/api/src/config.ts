@@ -15,7 +15,13 @@ const envSchema = z.object({
   
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_FROM_EMAIL: z.string().email().optional(),
-  
+
+  // Microsoft Graph — Outlook calendar invites for KUMii staff
+  MS_TENANT_ID:          z.string().optional(),
+  MS_CLIENT_ID:          z.string().optional(),
+  MS_CLIENT_SECRET:      z.string().optional(),
+  MS_CALENDAR_ORGANIZER: z.string().email().optional(), // e.g. bookings@22onsloane.co
+
   RATE_LIMIT_WINDOW_MS: z.string().default('900000'),
   RATE_LIMIT_MAX_REQUESTS: z.string().default('100'),
   

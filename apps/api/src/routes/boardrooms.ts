@@ -3,7 +3,16 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../supabase.js';
 import { authenticate, requireAdmin, requireModerator, AuthRequest } from '../middleware/auth.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validation.js';
+import { sendCalendarInvite, deleteCalendarEvent } from '../services/graphCalendar.js';
 import logger from '../logger.js';
+
+/** KUMii staff email domains — these users skip payment and go straight to confirmed. */
+const STAFF_DOMAINS = ['22onsloane.co'];
+
+function isStaffEmail(email: string): boolean {
+  const domain = email.split('@')[1]?.toLowerCase() ?? '';
+  return STAFF_DOMAINS.includes(domain);
+}
 
 const router = Router();
 
@@ -437,7 +446,12 @@ router.post(
       }
 
       // Insert booking as 'pending' — slot is NOT held until payment proof is submitted
-      const slotEnd = new Date(slotDate.getTime() + 60 * 60 * 1000);
+      const slotEnd  = new Date(slotDate.getTime() + 60 * 60 * 1000);
+      const isStaff  = isStaffEmail(req.user!.email);
+      // Staff (22onsloane.co) skip payment — book directly as 'confirmed'
+      // External users must go through the payment → approval flow
+      const initialStatus = isStaff ? 'confirmed' : 'pending';
+
       const { data: booking, error: bookingError } = await supabaseAdmin
         .from('boardroom_bookings')
         .insert({
@@ -446,7 +460,12 @@ router.post(
           slot_start: slotDate.toISOString(),
           slot_end:   slotEnd.toISOString(),
           notes:      notes ?? null,
-          status:     'pending',
+          status:     initialStatus,
+          // For staff, auto-fill approval fields so it's clearly admin-less
+          ...(isStaff ? {
+            approved_at: new Date().toISOString(),
+            // approved_by left null — system-confirmed
+          } : {}),
         })
         .select('*')
         .single();
@@ -458,36 +477,58 @@ router.post(
       const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
       const dateLabel = sast.toUTCString().slice(0, 16);
 
-      // Notify the user — slot is reserved pending payment
-      await supabaseAdmin.from('notifications').insert({
-        user_id: req.user!.id,
-        type:    'boardroom_booking_confirmed',   // reuse existing type for now
-        title:   `Boardroom slot requested: ${room.name}`,
-        message: `Your booking request for ${room.name} on ${dateLabel} at ${slotLabel} is pending. Please submit payment proof to confirm your slot.`,
-        data:    {
-          booking_id:  booking.id,
-          room_name:   room.name,
-          slot_start:  slotDate.toISOString(),
-          slot_label:  slotLabel,
-        },
-      });
+      if (isStaff) {
+        // ── Staff fast-path ──────────────────────────────────────────────────
+        // In-app notification: confirmed immediately
+        await supabaseAdmin.from('notifications').insert({
+          user_id: req.user!.id,
+          type:    'boardroom_booking_confirmed',
+          title:   `Boardroom booked: ${room.name}`,
+          message: `Your booking for ${room.name} on ${dateLabel} at ${slotLabel} is confirmed.`,
+          data:    { booking_id: booking.id, room_name: room.name, slot_start: slotDate.toISOString(), slot_label: slotLabel },
+        });
 
-      // Notify admins of new pending booking request
-      await supabaseAdmin.rpc('notify_admins_boardroom', {
-        p_type:    'boardroom_booking_awaiting_approval',
-        p_title:   `New boardroom request: ${room.name}`,
-        p_message: `A new booking request for ${room.name} on ${dateLabel} at ${slotLabel} is awaiting payment submission.`,
-        p_data:    {
-          booking_id:  booking.id,
-          room_name:   room.name,
-          slot_start:  slotDate.toISOString(),
-          slot_label:  slotLabel,
-          user_id:     req.user!.id,
-        },
-      });
+        // Fetch the user's full name for the calendar invite
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('full_name')
+          .eq('id', req.user!.id)
+          .single();
 
-      logger.info('Boardroom booking requested (pending)', { bookingId: booking.id, userId: req.user!.id, roomId: boardroom_id });
-      res.status(201).json({ success: true, data: booking });
+        // Send Outlook calendar invite (fire-and-forget — errors are logged but won't fail the request)
+        sendCalendarInvite({
+          recipientEmail: req.user!.email,
+          recipientName:  profile?.full_name ?? req.user!.email,
+          roomName:       room.name,
+          slotStart:      slotDate.toISOString(),
+          slotEnd:        slotEnd.toISOString(),
+          notes:          notes ?? undefined,
+          bookingId:      booking.id,
+        });
+
+        logger.info('Staff boardroom booking confirmed instantly', { bookingId: booking.id, userId: req.user!.id });
+      } else {
+        // ── External user — payment required ────────────────────────────────
+        await supabaseAdmin.from('notifications').insert({
+          user_id: req.user!.id,
+          type:    'boardroom_booking_confirmed',   // reuse type
+          title:   `Boardroom slot requested: ${room.name}`,
+          message: `Your booking request for ${room.name} on ${dateLabel} at ${slotLabel} is pending. Please submit payment proof to confirm your slot.`,
+          data:    { booking_id: booking.id, room_name: room.name, slot_start: slotDate.toISOString(), slot_label: slotLabel },
+        });
+
+        // Notify admins of new pending request
+        await supabaseAdmin.rpc('notify_admins_boardroom', {
+          p_type:    'boardroom_booking_awaiting_approval',
+          p_title:   `New boardroom request: ${room.name}`,
+          p_message: `A new booking request for ${room.name} on ${dateLabel} at ${slotLabel} is awaiting payment submission.`,
+          p_data:    { booking_id: booking.id, room_name: room.name, slot_start: slotDate.toISOString(), slot_label: slotLabel, user_id: req.user!.id },
+        });
+
+        logger.info('Boardroom booking requested (pending)', { bookingId: booking.id, userId: req.user!.id, roomId: boardroom_id });
+      }
+
+      res.status(201).json({ success: true, data: booking, is_staff: isStaff });
     } catch (err: any) {
       logger.error('POST /boardrooms/bookings', err);
       res.status(500).json({ success: false, error: err.message });
@@ -605,10 +646,10 @@ router.patch(
         return res.status(400).json({ success: false, error: 'A rejection reason is required when rejecting a booking' });
       }
 
-      // Fetch the booking
+      // Fetch the booking + user profile for calendar invite
       const { data: booking, error: fetchError } = await supabaseAdmin
         .from('boardroom_bookings')
-        .select(`id, user_id, slot_start, status, boardrooms ( id, name )`)
+        .select(`id, user_id, slot_start, slot_end, notes, status, boardrooms ( id, name )`)
         .eq('id', id)
         .single();
 
@@ -656,6 +697,26 @@ router.patch(
           message: `Your booking for ${room.name ?? 'the boardroom'} on ${dateLabel} at ${slotLabel} has been approved and confirmed!`,
           data:    { booking_id: id, room_name: room.name ?? '', slot_start: booking.slot_start, slot_label: slotLabel },
         });
+
+        // Send Outlook calendar invite to the user
+        // Fetch their email + name from the profiles table
+        const { data: userProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('email, full_name')
+          .eq('id', booking.user_id)
+          .single();
+
+        if (userProfile?.email) {
+          sendCalendarInvite({
+            recipientEmail: userProfile.email,
+            recipientName:  userProfile.full_name ?? userProfile.email,
+            roomName:       room.name ?? 'Boardroom',
+            slotStart:      booking.slot_start,
+            slotEnd:        (booking as any).slot_end ?? new Date(new Date(booking.slot_start).getTime() + 60 * 60 * 1000).toISOString(),
+            notes:          (booking as any).notes ?? undefined,
+            bookingId:      id,
+          });
+        }
       } else {
         // Notify user: booking is rejected with reason
         await supabaseAdmin.from('notifications').insert({
@@ -741,6 +802,11 @@ router.patch(
       const slotDate  = new Date(booking.slot_start);
       const sast      = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000);
       const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
+
+      // If the booking was confirmed, remove the Outlook calendar event (fire-and-forget)
+      if (booking.status === 'confirmed') {
+        deleteCalendarEvent(id);
+      }
 
       const cancelledByAdmin = isAdmin && booking.user_id !== req.user!.id;
       await supabaseAdmin.from('notifications').insert({

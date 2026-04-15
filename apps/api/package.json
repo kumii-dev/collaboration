@@ -20,6 +20,8 @@
   "author": "Kumii Platform",
   "license": "PROPRIETARY",
   "dependencies": {
+    "@azure/identity": "^4.13.1",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.6.2",
     "bad-words": "^4.0.0",
