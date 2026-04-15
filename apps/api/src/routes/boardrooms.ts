@@ -7,7 +7,7 @@ import { sendCalendarInvite, deleteCalendarEvent } from '../services/graphCalend
 import logger from '../logger.js';
 
 /** KUMii staff email domains — these users skip payment and go straight to confirmed. */
-const STAFF_DOMAINS = ['22onsloane.co'];
+const STAFF_DOMAINS = ['22onsloane.co', 'kumii.africa'];
 
 function isStaffEmail(email: string): boolean {
   const domain = email.split('@')[1]?.toLowerCase() ?? '';
