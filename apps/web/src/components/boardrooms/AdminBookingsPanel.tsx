@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Card, Button, Spinner, Alert, Form, Badge } from 'react-bootstrap';
-import { FiCheck, FiX, FiCalendar, FiClock, FiLink, FiHash, FiUser } from 'react-icons/fi';
+import { FiCheck, FiX, FiCalendar, FiClock, FiLink, FiHash, FiUser, FiRefreshCw } from 'react-icons/fi';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   fetchAllBookings,
@@ -11,6 +11,7 @@ import {
   Booking,
   BookingStatus,
 } from '../../lib/boardroomApi';
+import RescheduleModal from './RescheduleModal';
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
@@ -129,7 +130,8 @@ function ApprovePanel({
 
 function AdminBookingCard({ booking }: { booking: Booking }) {
   const qc = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded,       setExpanded]       = useState(false);
+  const [showReschedule, setShowReschedule] = useState(false);
 
   const room    = booking.boardrooms;
   const profile = booking.profiles;
@@ -218,16 +220,36 @@ function AdminBookingCard({ booking }: { booking: Booking }) {
 
       {/* Admin cancel for confirmed */}
       {booking.status === 'confirmed' && (
-        <Button
-          size="sm"
-          variant="outline-danger"
-          style={{ fontSize: 11, padding: '2px 8px', marginTop: 6 }}
-          onClick={() => cancelMutation.mutate()}
-          disabled={cancelMutation.isLoading}
-        >
-          {cancelMutation.isLoading ? <Spinner size="sm" animation="border" /> : <><FiX size={11} className="me-1" />Cancel Booking</>}
-        </Button>
+        <div className="d-flex gap-2 mt-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            style={{ fontSize: 11, padding: '2px 10px' }}
+            onClick={() => setShowReschedule(true)}
+          >
+            <FiRefreshCw size={11} className="me-1" />Reschedule
+          </Button>
+          <Button
+            size="sm"
+            variant="outline-danger"
+            style={{ fontSize: 11, padding: '2px 8px' }}
+            onClick={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isLoading}
+          >
+            {cancelMutation.isLoading
+              ? <Spinner size="sm" animation="border" />
+              : <><FiX size={11} className="me-1" />Cancel Booking</>
+            }
+          </Button>
+        </div>
       )}
+
+      {/* Reschedule modal */}
+      <RescheduleModal
+        booking={booking}
+        show={showReschedule}
+        onHide={() => setShowReschedule(false)}
+      />
     </div>
   );
 }

@@ -795,6 +795,125 @@ router.patch(
 );
 
 /**
+ * PATCH /api/boardrooms/bookings/:id/reschedule   (admin/moderator only)
+ * Move a confirmed booking to a new date/time slot.
+ * Validates conflict, updates slot_start/slot_end, notifies the user,
+ * and updates the Outlook calendar event (delete old, send new).
+ */
+router.patch(
+  '/bookings/:id/reschedule',
+  authenticate,
+  requireModerator,
+  validateParams(z.object({ id: z.string().uuid() })),
+  validateBody(z.object({
+    slot_start: z.string().datetime({ offset: true }),
+  })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id }         = req.params as { id: string };
+      const { slot_start } = req.body as { slot_start: string };
+
+      const newStart  = new Date(slot_start);
+      const newEnd    = new Date(newStart.getTime() + 60 * 60 * 1000); // 1-hour slots
+
+      // 1. Fetch the booking + room
+      const { data: booking, error: fetchErr } = await supabaseAdmin
+        .from('boardroom_bookings')
+        .select(`
+          id, boardroom_id, user_id, slot_start, slot_end, status, notes,
+          boardrooms ( id, name )
+        `)
+        .eq('id', id)
+        .single();
+
+      if (fetchErr || !booking) {
+        return res.status(404).json({ success: false, error: 'Booking not found' });
+      }
+      if (booking.status !== 'confirmed') {
+        return res.status(400).json({
+          success: false,
+          error: `Only confirmed bookings can be rescheduled (current status: '${booking.status}')`,
+        });
+      }
+
+      // 2. Conflict check — any confirmed/awaiting booking in the same room at the new slot
+      //    (excluding the booking itself)
+      const { data: conflict } = await supabaseAdmin
+        .from('boardroom_bookings')
+        .select('id, status')
+        .eq('boardroom_id', booking.boardroom_id)
+        .eq('slot_start', newStart.toISOString())
+        .in('status', ['awaiting_approval', 'confirmed'])
+        .neq('id', id)
+        .maybeSingle();
+
+      if (conflict) {
+        return res.status(409).json({
+          success: false,
+          error: 'That time slot is already booked. Please choose a different time.',
+        });
+      }
+
+      // 3. Update the booking
+      const { data: updated, error: updateErr } = await supabaseAdmin
+        .from('boardroom_bookings')
+        .update({
+          slot_start: newStart.toISOString(),
+          slot_end:   newEnd.toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (updateErr) throw updateErr;
+
+      // 4. Build display labels for notifications
+      const room      = (booking as any).boardrooms ?? {};
+      const sast      = new Date(newStart.getTime() + 2 * 60 * 60 * 1000);
+      const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
+      const dateLabel = sast.toUTCString().slice(0, 16);
+
+      // 5. Notify the user
+      await supabaseAdmin.from('notifications').insert({
+        user_id: booking.user_id,
+        type:    'boardroom_booking_confirmed',
+        title:   `Booking rescheduled: ${room.name ?? 'Boardroom'}`,
+        message: `Your booking for ${room.name ?? 'the boardroom'} has been rescheduled by an admin to ${dateLabel} at ${slotLabel}.`,
+        data:    { booking_id: id, room_name: room.name ?? '', slot_start: newStart.toISOString(), slot_label: slotLabel },
+      });
+
+      // 6. Update Outlook calendar: delete the old event, send a fresh invite
+      //    (fire-and-forget — failures are logged but don't break the response)
+      const { data: userProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('email, full_name')
+        .eq('id', booking.user_id)
+        .single();
+
+      deleteCalendarEvent(id);   // remove old event (keyed on booking id as transactionId)
+      if (userProfile?.email) {
+        sendCalendarInvite({
+          recipientEmail: userProfile.email,
+          recipientName:  userProfile.full_name ?? userProfile.email,
+          roomName:       room.name ?? 'Boardroom',
+          slotStart:      newStart.toISOString(),
+          slotEnd:        newEnd.toISOString(),
+          notes:          (booking as any).notes ?? undefined,
+          bookingId:      id,
+        });
+      }
+
+      logger.info('Booking rescheduled', { bookingId: id, adminId: req.user!.id, newSlot: newStart.toISOString() });
+      res.json({ success: true, data: updated });
+    } catch (err: any) {
+      logger.error('PATCH /boardrooms/bookings/:id/reschedule', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
+
+/**
  * PATCH /api/boardrooms/bookings/:id/cancel
  * User cancels their own booking, or admin cancels any booking.
  */

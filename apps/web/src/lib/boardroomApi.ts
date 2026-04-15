@@ -155,6 +155,11 @@ export async function approveBooking(id: string, payload: ApproveBookingPayload)
   return res.data.data;
 }
 
+export async function rescheduleBooking(id: string, slot_start: string): Promise<Booking> {
+  const res = await api.patch(`/boardrooms/bookings/${id}/reschedule`, { slot_start });
+  return res.data.data;
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 /** Format a UTC ISO slot_start into a human-readable SAST time. */
