@@ -65,10 +65,10 @@ export default function CategoryDetailPage() {
       if (!user) return null;
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, email')
         .eq('id', user.id)
         .maybeSingle();
-      return profile as { role: string } | null;
+      return profile as { role: string; email: string } | null;
     },
     { staleTime: 300_000, retry: 1 }
   );
@@ -403,7 +403,7 @@ export default function CategoryDetailPage() {
 
       {/* ── Tab: Boardrooms ── */}
       {activeTab === 'boardrooms' && (
-        <BoardroomsTab isAdmin={isAdmin} />
+        <BoardroomsTab isAdmin={isAdmin} userEmail={currentUserProfile?.email ?? ''} />
       )}
 
       {/* ── Tab: Trends ── */}

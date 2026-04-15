@@ -115,6 +115,12 @@ export async function fetchAllBookings(): Promise<Booking[]> {
   return res.data.data;
 }
 
+/** Fetch all confirmed bookings for a given SAST date (YYYY-MM-DD) — staff/admin only. */
+export async function fetchCalendarBookings(date: string): Promise<Booking[]> {
+  const res = await api.get('/boardrooms/bookings/calendar', { params: { date } });
+  return res.data.data;
+}
+
 export async function createBoardroom(payload: CreateBoardroomPayload): Promise<Boardroom> {
   const res = await api.post('/boardrooms', payload);
   return res.data.data;

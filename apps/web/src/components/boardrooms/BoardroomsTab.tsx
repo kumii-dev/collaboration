@@ -6,19 +6,29 @@ import { fetchBoardrooms, fetchAllBookings, Booking } from '../../lib/boardroomA
 import BoardroomCard from './BoardroomCard';
 import MyBookingsPanel from './MyBookingsPanel';
 import AdminBookingsPanel from './AdminBookingsPanel';
+import AllBookingsCalendar from './AllBookingsCalendar';
 import CreateBoardroomModal from './CreateBoardroomModal';
 
+const STAFF_DOMAINS = ['22onsloane.co', 'kumii.africa'];
+function isStaffEmail(email: string): boolean {
+  const domain = email.split('@')[1]?.toLowerCase() ?? '';
+  return STAFF_DOMAINS.includes(domain);
+}
+
 interface Props {
-  isAdmin: boolean;
+  isAdmin:   boolean;
+  userEmail: string;
 }
 
 const BTN_STYLE = { background: '#7a8567', borderColor: '#7a8567', color: 'white' };
 
-type SubNav = 'rooms' | 'my-bookings' | 'approvals';
+type SubNav = 'rooms' | 'my-bookings' | 'all-bookings' | 'approvals';
 
-export default function BoardroomsTab({ isAdmin }: Props) {
+export default function BoardroomsTab({ isAdmin, userEmail }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const [subNav,     setSubNav]     = useState<SubNav>('rooms');
+
+  const isStaff = isAdmin || isStaffEmail(userEmail);
 
   const { data, isLoading, isError } = useQuery(
     'boardrooms',
@@ -40,9 +50,10 @@ export default function BoardroomsTab({ isAdmin }: Props) {
 
   // Sub-nav items
   const navItems: { key: SubNav; label: string }[] = [
-    { key: 'rooms',       label: 'Available Rooms' },
-    { key: 'my-bookings', label: 'My Bookings'     },
-    ...(isAdmin ? [{ key: 'approvals' as SubNav, label: 'Approvals' }] : []),
+    { key: 'rooms',        label: 'Available Rooms' },
+    { key: 'my-bookings',  label: 'My Bookings'     },
+    ...(isStaff ? [{ key: 'all-bookings' as SubNav, label: 'All Bookings' }] : []),
+    ...(isAdmin ? [{ key: 'approvals'   as SubNav, label: 'Approvals'    }] : []),
   ];
 
   return (
@@ -157,6 +168,11 @@ export default function BoardroomsTab({ isAdmin }: Props) {
       {/* ── My Bookings ── */}
       {subNav === 'my-bookings' && (
         <MyBookingsPanel isAdmin={isAdmin} />
+      )}
+
+      {/* ── All Bookings calendar (staff + admin) ── */}
+      {subNav === 'all-bookings' && isStaff && (
+        <AllBookingsCalendar />
       )}
 
       {/* ── Approvals (admin only) ── */}

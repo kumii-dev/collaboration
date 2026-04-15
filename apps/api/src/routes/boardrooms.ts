@@ -14,6 +14,14 @@ function isStaffEmail(email: string): boolean {
   return STAFF_DOMAINS.includes(domain);
 }
 
+/** Middleware: allow admins/moderators OR staff-domain users. */
+function requireStaffOrAdmin(req: AuthRequest, res: any, next: any) {
+  if (!req.user) return res.status(401).json({ success: false, error: 'Unauthorised' });
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'moderator';
+  if (isAdmin || isStaffEmail(req.user.email)) return next();
+  return res.status(403).json({ success: false, error: 'Staff access required' });
+}
+
 const router = Router();
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
@@ -207,6 +215,49 @@ router.get('/bookings/mine', authenticate, async (req: AuthRequest, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+/**
+ * GET /api/boardrooms/bookings/calendar   (staff + admin)
+ * Returns all confirmed bookings for a given date (SAST YYYY-MM-DD) across all boardrooms.
+ * Used by the "All Bookings" calendar view.
+ */
+router.get(
+  '/bookings/calendar',
+  authenticate,
+  requireStaffOrAdmin,
+  async (req: AuthRequest, res) => {
+    try {
+      const date = req.query.date as string | undefined;
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ success: false, error: 'Provide a ?date=YYYY-MM-DD query param' });
+      }
+
+      // Convert SAST date boundaries to UTC for Postgres comparison
+      // SAST = UTC+2, so YYYY-MM-DD 00:00 SAST = (YYYY-MM-DD)T22:00:00Z of prior day
+      const dayStart = new Date(`${date}T00:00:00+02:00`).toISOString();
+      const dayEnd   = new Date(`${date}T23:59:59+02:00`).toISOString();
+
+      const { data, error } = await supabaseAdmin
+        .from('boardroom_bookings')
+        .select(`
+          id, boardroom_id, slot_start, slot_end, status, notes,
+          boardrooms ( id, name, capacity ),
+          profiles!boardroom_bookings_user_id_fkey ( id, full_name, email, avatar_url )
+        `)
+        .eq('status', 'confirmed')
+        .gte('slot_start', dayStart)
+        .lte('slot_start', dayEnd)
+        .order('slot_start', { ascending: true });
+
+      if (error) throw error;
+
+      res.json({ success: true, data: data ?? [] });
+    } catch (err: any) {
+      logger.error('GET /boardrooms/bookings/calendar', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
 
 /**
  * GET /api/boardrooms/bookings/all   (admin/moderator only)
