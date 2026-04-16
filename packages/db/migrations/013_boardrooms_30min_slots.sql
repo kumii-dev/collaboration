@@ -2,6 +2,11 @@
 -- Previously constraints enforced 1-hour slots starting on the hour only.
 -- Now slots are 30 minutes and can start on the hour OR half-hour.
 
+-- 0. Fix any existing rows that still have slot_end = slot_start + 1 hour
+UPDATE boardroom_bookings
+SET slot_end = slot_start + INTERVAL '30 minutes'
+WHERE slot_end = slot_start + INTERVAL '1 hour';
+
 -- 1. Drop old constraints
 ALTER TABLE boardroom_bookings DROP CONSTRAINT IF EXISTS chk_slot_end;
 ALTER TABLE boardroom_bookings DROP CONSTRAINT IF EXISTS chk_slot_minute;
