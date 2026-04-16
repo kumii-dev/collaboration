@@ -6,10 +6,16 @@ import { fetchCalendarBookings, fetchBoardrooms, Booking } from '../../lib/board
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/** Business hours to display: 07:00–20:00 SAST */
-const HOUR_START = 7;
-const HOUR_END   = 20;
-const HOURS      = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i);
+/** Business hours to display: 07:00–20:00 SAST in 30-min increments */
+const SLOT_START_MIN = 7 * 60;
+const SLOT_END_MIN   = 20 * 60;
+const SLOTS = Array.from(
+  { length: (SLOT_END_MIN - SLOT_START_MIN) / 30 },
+  (_, i) => {
+    const total = SLOT_START_MIN + i * 30;
+    return { h: Math.floor(total / 60), m: total % 60 };
+  }
+);
 
 const ROOM_COLORS = [
   '#7a8567', '#5a7d4e', '#8b6f47', '#4a7c8e', '#7b5ea7',
@@ -43,11 +49,11 @@ function todaySAST(): string {
   return sast.toISOString().slice(0, 10);
 }
 
-/** Extract the SAST hour (0-23) from a UTC ISO slot_start */
-function slotHourSAST(isoUtc: string): number {
+/** Extract the SAST "HH:MM" key from a UTC ISO slot_start */
+function slotKeySAST(isoUtc: string): string {
   const d = new Date(isoUtc);
   const sast = new Date(d.getTime() + 2 * 60 * 60 * 1000);
-  return sast.getUTCHours();
+  return `${String(sast.getUTCHours()).padStart(2, '0')}:${String(sast.getUTCMinutes()).padStart(2, '0')}`;
 }
 
 /** Initials from a name */
@@ -81,12 +87,12 @@ export default function AllBookingsCalendar() {
     { staleTime: 60_000 }
   );
 
-  // Build lookup: roomId → hour → booking
+  // Build lookup: roomId → "HH:MM" → booking
   const grid = useMemo(() => {
-    const map: Record<string, Record<number, Booking>> = {};
+    const map: Record<string, Record<string, Booking>> = {};
     for (const b of bookings) {
       if (!map[b.boardroom_id]) map[b.boardroom_id] = {};
-      map[b.boardroom_id][slotHourSAST(b.slot_start)] = b;
+      map[b.boardroom_id][slotKeySAST(b.slot_start)] = b;
     }
     return map;
   }, [bookings]);
@@ -188,12 +194,15 @@ export default function AllBookingsCalendar() {
               ))}
             </div>
 
-            {/* ── Hour rows ── */}
-            {HOURS.map(hour => {
-              const hasAnyBooking = rooms.some(r => grid[r.id]?.[hour]);
+            {/* ── Slot rows (30-min increments) ── */}
+            {SLOTS.map(({ h, m }) => {
+              const key = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+              const endMin = h * 60 + m + 30;
+              const endKey = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+              const hasAnyBooking = rooms.some(r => grid[r.id]?.[key]);
               return (
                 <div
-                  key={hour}
+                  key={key}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: `80px repeat(${rooms.length}, 1fr)`,
@@ -201,14 +210,14 @@ export default function AllBookingsCalendar() {
                     background: hasAnyBooking ? '#f7f9f4' : 'transparent',
                   }}
                 >
-                  {/* Hour label */}
+                  {/* Slot label */}
                   <div style={hourLabelStyle}>
-                    {String(hour).padStart(2, '0')}:00
+                    {key}
                   </div>
 
                   {/* Cells for each room */}
                   {rooms.map((room, i) => {
-                    const booking = grid[room.id]?.[hour];
+                    const booking = grid[room.id]?.[key];
                     const color   = ROOM_COLORS[i % ROOM_COLORS.length];
 
                     if (!booking) {
@@ -229,7 +238,7 @@ export default function AllBookingsCalendar() {
                           <Tooltip id={`tip-${booking.id}`}>
                             <div style={{ textAlign: 'left', fontSize: 12 }}>
                               <div style={{ fontWeight: 600 }}>{room.name}</div>
-                              <div>{String(hour).padStart(2,'0')}:00 – {String(hour+1).padStart(2,'0')}:00 SAST</div>
+                              <div>{key} – {endKey} SAST</div>
                               <div style={{ marginTop: 4 }}>
                                 <FiUser style={{ marginRight: 4 }} />
                                 {name}
@@ -273,7 +282,7 @@ export default function AllBookingsCalendar() {
                               {name.split(' ')[0]}
                             </div>
                             <div style={{ fontSize: 10, color: '#666' }}>
-                              {String(hour).padStart(2,'0')}–{String(hour+1).padStart(2,'0')}
+                              {key}–{endKey}
                             </div>
                           </div>
                         </div>

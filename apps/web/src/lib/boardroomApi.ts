@@ -164,10 +164,12 @@ export async function rescheduleBooking(id: string, slot_start: string): Promise
 
 /** Format a UTC ISO slot_start into a human-readable SAST time. */
 export function formatSlotSAST(isoUtc: string): string {
-  const d     = new Date(isoUtc);
-  const sast  = new Date(d.getTime() + 2 * 60 * 60 * 1000);
-  const h     = sast.getUTCHours();
-  return `${String(h).padStart(2, '0')}:00 – ${String(h + 1).padStart(2, '0')}:00 SAST`;
+  const d      = new Date(isoUtc);
+  const sast   = new Date(d.getTime() + 2 * 60 * 60 * 1000);
+  const h      = sast.getUTCHours();
+  const m      = sast.getUTCMinutes();
+  const endMin = h * 60 + m + 30;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} – ${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')} SAST`;
 }
 
 /** Format a UTC ISO date into a SAST date string, e.g. "Mon 10 Jun 2024". */

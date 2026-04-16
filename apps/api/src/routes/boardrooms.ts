@@ -22,6 +22,18 @@ function requireStaffOrAdmin(req: AuthRequest, res: any, next: any) {
   return res.status(403).json({ success: false, error: 'Staff access required' });
 }
 
+/** Slot duration: 30 minutes */
+const SLOT_DURATION_MS = 30 * 60 * 1000;
+
+/** Convert a UTC slot_start Date into an "HH:MM – HH:MM" SAST string (no timezone suffix). */
+function formatSastLabel(slotStartUtc: Date): string {
+  const sast   = new Date(slotStartUtc.getTime() + 2 * 60 * 60 * 1000);
+  const h      = sast.getUTCHours();
+  const m      = sast.getUTCMinutes();
+  const endMin = h * 60 + m + 30;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} – ${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+}
+
 const router = Router();
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
@@ -75,29 +87,31 @@ const listSchema = z.object({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** SAST = UTC+2.  Valid slot hours: 08:00 – 16:00 SAST (last bookable slot starts at 16:00, ends 17:00).
- *  Valid days: Mon–Fri (DOW 1–5 in SAST). */
+/** SAST = UTC+2.  Valid slot starts: 08:00–16:30 SAST (last slot ends 17:00).
+ *  Valid days: Mon–Fri (DOW 1–5 in SAST).
+ *  Slots must start on the hour or half-hour. */
 function validateSlotTime(slotStart: Date): { ok: boolean; reason?: string } {
-  // Convert to SAST
   const sast = new Date(slotStart.getTime() + 2 * 60 * 60 * 1000);
-  const dow  = sast.getUTCDay(); // 0=Sun, 6=Sat
+  const dow  = sast.getUTCDay();
   const hour = sast.getUTCHours();
   const min  = sast.getUTCMinutes();
   const sec  = sast.getUTCSeconds();
 
   if (dow === 0 || dow === 6) return { ok: false, reason: 'Boardrooms are only available Mon–Fri' };
-  if (hour < 8 || hour > 16)  return { ok: false, reason: 'Bookings are only available 08:00–17:00 SAST (last slot at 16:00)' };
-  if (min !== 0 || sec !== 0) return { ok: false, reason: 'Slot must start on the hour (e.g. 09:00, 10:00)' };
+  if (hour < 8 || hour > 16)  return { ok: false, reason: 'Bookings are only available 08:00–17:00 SAST (last slot at 16:30)' };
+  if (min !== 0 && min !== 30) return { ok: false, reason: 'Slot must start on the hour or half-hour (e.g. 09:00, 09:30)' };
+  if (sec !== 0)               return { ok: false, reason: 'Slot must start exactly on the hour or half-hour' };
   return { ok: true };
 }
 
-/** Returns all 9 slot times for a given SAST date (08:00–16:00, inclusive). */
+/** Returns all 18 half-hour slot times for a given SAST date (08:00–16:30, inclusive). */
 function generateDaySlots(dateStr: string): Date[] {
   const slots: Date[] = [];
   for (let h = 8; h <= 16; h++) {
-    // dateStr is YYYY-MM-DD; build as SAST then convert to UTC
-    const iso  = `${dateStr}T${String(h).padStart(2, '0')}:00:00+02:00`;
-    slots.push(new Date(iso));
+    for (const m of [0, 30]) {
+      const iso = `${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00+02:00`;
+      slots.push(new Date(iso));
+    }
   }
   return slots;
 }
@@ -172,8 +186,7 @@ router.get(
       const result = slots.map(slot => {
         const iso    = slot.toISOString();
         const entry  = bookedMap.get(iso);
-        const sast   = new Date(slot.getTime() + 2 * 60 * 60 * 1000);
-        const label  = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00`;
+        const label  = formatSastLabel(slot);
         return {
           slot_start:  iso,
           label,
@@ -497,7 +510,7 @@ router.post(
       }
 
       // Insert booking as 'pending' — slot is NOT held until payment proof is submitted
-      const slotEnd  = new Date(slotDate.getTime() + 60 * 60 * 1000);
+      const slotEnd  = new Date(slotDate.getTime() + SLOT_DURATION_MS);
       const isStaff  = isStaffEmail(req.user!.email);
       // Staff (22onsloane.co) skip payment — book directly as 'confirmed'
       // External users must go through the payment → approval flow
@@ -524,9 +537,8 @@ router.post(
       if (bookingError) throw bookingError;
 
       // Compute display values
-      const sast      = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000);
-      const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
-      const dateLabel = sast.toUTCString().slice(0, 16);
+      const slotLabel = `${formatSastLabel(slotDate)} SAST`;
+      const dateLabel = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000).toUTCString().slice(0, 16);
 
       if (isStaff) {
         // ── Staff fast-path ──────────────────────────────────────────────────
@@ -638,9 +650,8 @@ router.patch(
 
       const room      = (booking as any).boardrooms ?? {};
       const slotDate  = new Date(booking.slot_start);
-      const sast      = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000);
-      const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
-      const dateLabel = sast.toUTCString().slice(0, 16);
+      const slotLabel = `${formatSastLabel(slotDate)} SAST`;
+      const dateLabel = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000).toUTCString().slice(0, 16);
 
       // Notify the user: payment received, awaiting admin review
       await supabaseAdmin.from('notifications').insert({
@@ -735,9 +746,8 @@ router.patch(
       if (updateError) throw updateError;
 
       const slotDate  = new Date(booking.slot_start);
-      const sast      = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000);
-      const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
-      const dateLabel = sast.toUTCString().slice(0, 16);
+      const slotLabel = `${formatSastLabel(slotDate)} SAST`;
+      const dateLabel = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000).toUTCString().slice(0, 16);
 
       if (approve) {
         // Notify user: booking is confirmed
@@ -763,7 +773,7 @@ router.patch(
             recipientName:  userProfile.full_name ?? userProfile.email,
             roomName:       room.name ?? 'Boardroom',
             slotStart:      booking.slot_start,
-            slotEnd:        (booking as any).slot_end ?? new Date(new Date(booking.slot_start).getTime() + 60 * 60 * 1000).toISOString(),
+            slotEnd:        (booking as any).slot_end ?? new Date(new Date(booking.slot_start).getTime() + SLOT_DURATION_MS).toISOString(),
             notes:          (booking as any).notes ?? undefined,
             bookingId:      id,
           });
@@ -814,7 +824,7 @@ router.patch(
       const { slot_start } = req.body as { slot_start: string };
 
       const newStart  = new Date(slot_start);
-      const newEnd    = new Date(newStart.getTime() + 60 * 60 * 1000); // 1-hour slots
+      const newEnd    = new Date(newStart.getTime() + SLOT_DURATION_MS); // 30-min slots
 
       // 1. Fetch the booking + room
       const { data: booking, error: fetchErr } = await supabaseAdmin
@@ -870,9 +880,8 @@ router.patch(
 
       // 4. Build display labels for notifications
       const room      = (booking as any).boardrooms ?? {};
-      const sast      = new Date(newStart.getTime() + 2 * 60 * 60 * 1000);
-      const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
-      const dateLabel = sast.toUTCString().slice(0, 16);
+      const slotLabel = `${formatSastLabel(newStart)} SAST`;
+      const dateLabel = new Date(newStart.getTime() + 2 * 60 * 60 * 1000).toUTCString().slice(0, 16);
 
       // 5. Notify the user
       await supabaseAdmin.from('notifications').insert({
@@ -970,8 +979,7 @@ router.patch(
       const notifyUserId = booking.user_id;
       const room = (booking as any).boardrooms ?? {};
       const slotDate  = new Date(booking.slot_start);
-      const sast      = new Date(slotDate.getTime() + 2 * 60 * 60 * 1000);
-      const slotLabel = `${String(sast.getUTCHours()).padStart(2, '0')}:00 – ${String(sast.getUTCHours() + 1).padStart(2, '0')}:00 SAST`;
+      const slotLabel = `${formatSastLabel(slotDate)} SAST`;
 
       // If the booking was confirmed, remove the Outlook calendar event (fire-and-forget)
       if (booking.status === 'confirmed') {

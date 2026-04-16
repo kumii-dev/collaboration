@@ -4,8 +4,20 @@ import { FiCalendar, FiClock, FiRefreshCw } from 'react-icons/fi';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { fetchAvailability, rescheduleBooking, getBookableDates, Booking } from '../../lib/boardroomApi';
 
-// ── Hours available for selection (07:00–19:00 start = 08:00 end) ─────────────
-const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7..19
+// ── Slots available for selection (07:00–19:30, 30-min increments) ─────────────
+const SLOTS = Array.from({ length: 26 }, (_, i) => {
+  const total = 7 * 60 + i * 30;
+  return { h: Math.floor(total / 60), m: total % 60 };
+});
+
+function slotKey(h: number, m: number): string {
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function slotEndKey(h: number, m: number): string {
+  const endMin = h * 60 + m + 30;
+  return slotKey(Math.floor(endMin / 60), endMin % 60);
+}
 
 interface Props {
   booking: Booking;
@@ -20,12 +32,14 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
   const roomName  = room?.name ?? 'Boardroom';
 
   // Current booking's SAST date as default selected date
-  const currentSAST = new Date(new Date(booking.slot_start).getTime() + 2 * 60 * 60 * 1000);
-  const currentDate = currentSAST.toISOString().slice(0, 10);
-  const currentHour = currentSAST.getUTCHours();
+  const currentSAST   = new Date(new Date(booking.slot_start).getTime() + 2 * 60 * 60 * 1000);
+  const currentDate   = currentSAST.toISOString().slice(0, 10);
+  const currentHour   = currentSAST.getUTCHours();
+  const currentMinute = currentSAST.getUTCMinutes();
+  const currentSlotKey = slotKey(currentHour, currentMinute);
 
   const [selectedDate, setSelectedDate] = useState<string>(currentDate);
-  const [selectedHour, setSelectedHour] = useState<number | null>(currentHour);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(currentSlotKey);
   const [apiError,     setApiError]     = useState<string | null>(null);
   const [success,      setSuccess]      = useState(false);
 
@@ -33,7 +47,7 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
   useEffect(() => {
     if (show) {
       setSelectedDate(currentDate);
-      setSelectedHour(currentHour);
+      setSelectedSlot(currentSlotKey);
       setApiError(null);
       setSuccess(false);
     }
@@ -46,25 +60,26 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
     { staleTime: 30_000, enabled: show }
   );
 
-  // Build a set of hours that are blocked (held by someone else)
-  const blockedHours = new Set(
+  // Build a set of slot keys ("HH:MM") that are blocked (held by someone else)
+  const blockedSlots = new Set(
     slots
       .filter(s => !s.available && !s.is_mine)
-      .map(s => new Date(new Date(s.slot_start).getTime() + 2 * 60 * 60 * 1000).getUTCHours())
+      .map(s => {
+        const sast = new Date(new Date(s.slot_start).getTime() + 2 * 60 * 60 * 1000);
+        return slotKey(sast.getUTCHours(), sast.getUTCMinutes());
+      })
   );
 
-  // Is the currently-selected hour the same as the current booking?
-  const unchanged = selectedDate === currentDate && selectedHour === currentHour;
+  // Is the currently-selected slot the same as the current booking?
+  const unchanged = selectedDate === currentDate && selectedSlot === currentSlotKey;
 
   const mutation = useMutation(
     () => {
-      // Build UTC ISO from SAST date + hour
-      const utcHour = selectedHour! - 2; // SAST - 2 = UTC
-      // Handle day-wrap if utcHour < 0
-      const [y, m, d] = selectedDate.split('-').map(Number);
-      const utcDate   = new Date(Date.UTC(y, m - 1, d, utcHour < 0 ? 22 : utcHour));
-      if (utcHour < 0) utcDate.setUTCDate(utcDate.getUTCDate() - 1);
-      return rescheduleBooking(booking.id, utcDate.toISOString());
+      // Build UTC ISO: take SAST date+time, subtract 2h to get UTC
+      const [sh, sm] = selectedSlot!.split(':').map(Number);
+      const [y, mo, d] = selectedDate.split('-').map(Number);
+      const sastDateMs = Date.UTC(y, mo - 1, d, sh, sm, 0) - 2 * 60 * 60 * 1000;
+      return rescheduleBooking(booking.id, new Date(sastDateMs).toISOString());
     },
     {
       onSuccess: () => {
@@ -81,7 +96,7 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
   );
 
   const handleConfirm = () => {
-    if (selectedHour === null) return;
+    if (selectedSlot === null) return;
     setApiError(null);
     mutation.mutate();
   };
@@ -136,7 +151,7 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
                 <FiCalendar size={12} className="me-1" />
                 Currently: <strong>{currentSAST.toLocaleDateString('en-ZA', {
                   weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
-                })}</strong> at <strong>{String(currentHour).padStart(2, '0')}:00 – {String(currentHour + 1).padStart(2, '0')}:00 SAST</strong>
+                })}</strong> at <strong>{currentSlotKey} – {slotEndKey(currentHour, currentMinute)} SAST</strong>
               </div>
             </div>
 
@@ -154,7 +169,7 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
               <Form.Select
                 size="sm"
                 value={selectedDate}
-                onChange={e => { setSelectedDate(e.target.value); setSelectedHour(null); }}
+                onChange={e => { setSelectedDate(e.target.value); setSelectedSlot(null); }}
                 style={{ fontSize: 13 }}
               >
                 {dates.map(({ iso, label }) => (
@@ -176,10 +191,12 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
                   gap: 6,
                 }}
               >
-                {HOURS.map(hour => {
-                  const isBlocked  = blockedHours.has(hour);
-                  const isCurrent  = selectedDate === currentDate && hour === currentHour;
-                  const isSelected = hour === selectedHour;
+                {SLOTS.map(({ h, m }) => {
+                  const key        = slotKey(h, m);
+                  const endK       = slotEndKey(h, m);
+                  const isBlocked  = blockedSlots.has(key);
+                  const isCurrent  = selectedDate === currentDate && key === currentSlotKey;
+                  const isSelected = key === selectedSlot;
 
                   let bg     = 'white';
                   let border = '1px solid #ddd';
@@ -196,25 +213,25 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
 
                   return (
                     <button
-                      key={hour}
+                      key={key}
                       disabled={isBlocked}
-                      onClick={() => !isBlocked && setSelectedHour(hour)}
+                      onClick={() => !isBlocked && setSelectedSlot(key)}
                       title={isBlocked ? 'Already booked' : isCurrent ? 'Current slot' : ''}
                       style={{
-                        padding: '8px 4px',
+                        padding: '6px 4px',
                         borderRadius: 8,
                         background: bg,
                         border,
                         color,
                         cursor,
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: isSelected ? 700 : 400,
                         transition: 'all 0.12s ease',
                         textAlign: 'center',
                         lineHeight: 1.2,
                       }}
                     >
-                      {String(hour).padStart(2, '0')}:00
+                      {key}–{endK}
                       {isCurrent && !isSelected && (
                         <div style={{ fontSize: 9, color: '#7a8567', marginTop: 1 }}>current</div>
                       )}
@@ -228,13 +245,13 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
             </Form.Group>
 
             {/* Selected summary */}
-            {selectedHour !== null && (
+            {selectedSlot !== null && (
               <div style={{ fontSize: 13, color: '#555', background: '#f7f9f4', borderRadius: 8, padding: '8px 12px' }}>
                 New slot:{' '}
                 <strong>
                   {new Date(Date.UTC(...selectedDate.split('-').map(Number) as [number, number, number], 12))
                     .toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}
-                  {' '}at {String(selectedHour).padStart(2, '0')}:00 – {String(selectedHour + 1).padStart(2, '0')}:00 SAST
+                  {' '}at {selectedSlot} – {slotEndKey(...selectedSlot.split(':').map(Number) as [number, number])} SAST
                 </strong>
               </div>
             )}
@@ -255,10 +272,10 @@ export default function RescheduleModal({ booking, show, onHide }: Props) {
           <Button
             size="sm"
             onClick={handleConfirm}
-            disabled={selectedHour === null || unchanged || mutation.isLoading || slotsLoading}
+            disabled={selectedSlot === null || unchanged || mutation.isLoading || slotsLoading}
             style={{
               background: '#7a8567', borderColor: '#7a8567', color: 'white',
-              opacity: (selectedHour === null || unchanged) ? 0.5 : 1,
+              opacity: (selectedSlot === null || unchanged) ? 0.5 : 1,
             }}
           >
             {mutation.isLoading

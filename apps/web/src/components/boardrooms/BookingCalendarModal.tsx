@@ -234,7 +234,7 @@ export default function BookingCalendarModal({ show, onHide, boardroom }: Props)
             )}
 
             <p style={{ fontSize: 12, color: '#999', marginBottom: 0 }}>
-              All times shown in SAST (UTC+2). Slots are 1 hour each (08:00–17:00, Mon–Fri). Bookings up to 1 month in advance.
+              All times shown in SAST (UTC+2). Slots are 30 minutes each (08:00–17:00, Mon–Fri). Bookings up to 1 month in advance.
             </p>
           </>
         )}
