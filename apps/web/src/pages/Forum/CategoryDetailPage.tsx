@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, Button, Spinner, ListGroup } from 'react-bootstrap';
-import { FiMessageSquare, FiEye, FiUser, FiArrowRight, FiTrendingUp, FiHome } from 'react-icons/fi';
+import { FiMessageSquare, FiEye, FiUser, FiArrowRight, FiTrendingUp, FiHome, FiEdit2 } from 'react-icons/fi';
 import { BsChatDots } from 'react-icons/bs';
 import { FiCalendar } from 'react-icons/fi';
 import { format } from 'date-fns';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../lib/api';
-import { supabase } from '../../lib/supabase';
+import { useKumii } from '../../lib/KumiiContext';
 import UpcomingEventsSection from '../../components/events/UpcomingEventsSection';
 import CommunityChatPanel from '../../components/community/CommunityChatPanel';
 import TrendsTab from '../../components/wordcloud/TrendsTab';
@@ -56,25 +56,9 @@ export default function CategoryDetailPage() {
   const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'discussions' | 'chat' | 'events' | 'boardrooms' | 'trends'>('discussions');
 
-  // Fetch current user's role directly from Supabase (bypasses the API so it
-  // works even when the user has no profile row yet — returns null gracefully).
-  const { data: currentUserProfile } = useQuery(
-    'current-user-profile',
-    async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, email')
-        .eq('id', user.id)
-        .maybeSingle();
-      return profile as { role: string; email: string } | null;
-    },
-    { staleTime: 300_000, retry: 1 }
-  );
-  const isAdmin =
-    currentUserProfile?.role === 'admin' ||
-    currentUserProfile?.role === 'moderator';
+  // Role from KUMII_IDENTITY (the authoritative platform role)
+  const { role, profile } = useKumii();
+  const isAdmin = role === 'admin';
 
   // Fetch all categories to find the one with matching slug
   const { data: categories, isLoading: loadingCategories, error: categoriesError } = useQuery(
@@ -185,7 +169,7 @@ export default function CategoryDetailPage() {
               <p className="text-muted mb-0">{category.description}</p>
             </div>
           </div>
-          <div className="d-flex gap-2">
+          <div className="d-flex gap-2 flex-wrap align-items-center">
             <Button 
               style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
               onClick={() => navigate('/forum/new-thread')}
@@ -198,6 +182,18 @@ export default function CategoryDetailPage() {
             >
               Back to Forum
             </Button>
+            {isAdmin && (
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                className="d-flex align-items-center gap-1"
+                onClick={() => navigate('/forum-admin')}
+                title="Manage forum categories, boards & threads"
+              >
+                <FiEdit2 size={13} />
+                Edit
+              </Button>
+            )}
           </div>
         </Card.Body>
       </Card>
@@ -403,7 +399,7 @@ export default function CategoryDetailPage() {
 
       {/* ── Tab: Boardrooms ── */}
       {activeTab === 'boardrooms' && (
-        <BoardroomsTab isAdmin={isAdmin} userEmail={currentUserProfile?.email ?? ''} />
+        <BoardroomsTab isAdmin={isAdmin} userEmail={profile?.email ?? ''} />
       )}
 
       {/* ── Tab: Trends ── */}
