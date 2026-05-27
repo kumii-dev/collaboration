@@ -408,15 +408,15 @@ function App() {
               path="/login"
               element={
                 !session
-                  ? (inIframe ? <Navigate to="/dashboard" /> : <LoginPage />)
-                  : <Navigate to="/dashboard" />
+                  ? (inIframe ? <Navigate to="/forum" /> : <LoginPage />)
+                  : <Navigate to="/forum" />
               }
             />
             <Route
               path="/"
               element={session ? <MainLayout /> : <Navigate to="/login" />}
             >
-              <Route index element={<Navigate to="/dashboard" />} />
+              <Route index element={<Navigate to="/forum" />} />
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="chat/*" element={<ChatPage />} />
               <Route path="forum" element={<ForumPage />} />
