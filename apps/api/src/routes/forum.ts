@@ -1436,9 +1436,9 @@ router.put(
         });
       }
 
-      // Verify the user is the author
-      if (post.author_id !== userId) {
-        console.error('❌ Unauthorized: User is not post author');
+      // Verify the user is the author OR an admin
+      if (post.author_id !== userId && req.user!.role !== 'admin') {
+        console.error('❌ Unauthorized: User is not post author or admin');
         return res.status(403).json({
           success: false,
           error: 'You can only edit your own posts',
@@ -1901,6 +1901,71 @@ router.delete(
       res.json({ success: true, data: { deleted: true } });
     } catch (error) {
       logger.error('DELETE /forum/posts/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * PUT /api/forum/threads/:id
+ * Edit a thread title and/or content.
+ *   - Thread author may edit their own thread.
+ *   - Admins may edit any thread.
+ */
+router.put(
+  '/threads/:id',
+  authenticate,
+  validateParams(z.object({ id: z.string().uuid() })),
+  validateBody(z.object({
+    title:   z.string().min(1).max(300).optional(),
+    content: z.string().min(1).max(100000).optional(),
+  })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { title, content } = req.body;
+      const userId = req.user!.id;
+      const isAdmin = req.user!.role === 'admin';
+
+      if (!title && !content) {
+        return res.status(400).json({ success: false, error: 'Nothing to update' });
+      }
+
+      const { data: thread, error: fetchError } = await supabaseAdmin
+        .from('forum_threads')
+        .select('id, author_id, deleted')
+        .eq('id', id)
+        .single();
+
+      if (fetchError || !thread) {
+        return res.status(404).json({ success: false, error: 'Thread not found' });
+      }
+      if (thread.deleted) {
+        return res.status(410).json({ success: false, error: 'Thread has been deleted' });
+      }
+      if (!isAdmin && thread.author_id !== userId) {
+        return res.status(403).json({ success: false, error: 'You can only edit your own threads' });
+      }
+
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (title)   updates.title   = title;
+      if (content) updates.content = content;
+
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('forum_threads')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (updateError) {
+        logger.error('Failed to update thread', { id, updateError });
+        return res.status(500).json({ success: false, error: 'Failed to update thread' });
+      }
+
+      res.json({ success: true, data: updated });
+    } catch (error) {
+      logger.error('PUT /forum/threads/:id error', { error });
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }

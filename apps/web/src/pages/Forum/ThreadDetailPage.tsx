@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Badge, Button, Form, Spinner, Alert, Dropdown, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Card, Badge, Button, Form, Spinner, Alert, Dropdown, OverlayTrigger, Tooltip, Modal } from 'react-bootstrap';
 import { 
   FiArrowLeft, 
   FiThumbsUp, 
@@ -22,6 +22,7 @@ import {
 } from 'react-icons/fi';
 import { format, formatDistanceToNow } from 'date-fns';
 import api from '../../lib/api';
+import { useKumii } from '../../lib/KumiiContext';
 
 interface Thread {
   id: string;
@@ -63,6 +64,20 @@ export default function ThreadDetailPage() {
   const [replyContent, setReplyContent] = useState('');
   const [replyToPostId, setReplyToPostId] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  // Role + identity
+  const { role, profile } = useKumii();
+  const isAdmin = role === 'admin';
+  const currentUserId = profile?.user_id;
+
+  // Thread edit modal state
+  const [editThread, setEditThread] = useState<{ show: boolean; title: string; content: string }>({ show: false, title: '', content: '' });
+  // Thread delete confirm modal
+  const [confirmDeleteThread, setConfirmDeleteThread] = useState(false);
+  // Per-post inline edit state: postId → draft content (undefined = not editing)
+  const [editingPost, setEditingPost] = useState<Record<string, string>>({});
+  // Per-post delete confirm modal
+  const [confirmDeletePost, setConfirmDeletePost] = useState<string | null>(null);
 
   // Fetch thread details
   const { data: thread, isLoading: loadingThread, error: threadError } = useQuery(
@@ -167,6 +182,40 @@ export default function ThreadDetailPage() {
     }
   );
 
+  // Edit thread mutation
+  const editThreadMutation = useMutation(
+    async ({ title, content }: { title: string; content: string }) => {
+      const response = await api.put(`/forum/threads/${threadId}`, { title, content });
+      return response.data;
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['thread', threadId]);
+        setEditThread({ show: false, title: '', content: '' });
+      },
+      onError: (error: any) => {
+        console.error('Failed to edit thread:', error);
+      }
+    }
+  );
+
+  // Delete thread mutation
+  const deleteThreadMutation = useMutation(
+    async () => {
+      const response = await api.delete(`/forum/threads/${threadId}`);
+      return response.data;
+    },
+    {
+      onSuccess: () => {
+        setConfirmDeleteThread(false);
+        navigate('/forum');
+      },
+      onError: (error: any) => {
+        console.error('Failed to delete thread:', error);
+      }
+    }
+  );
+
   // Edit post mutation
   const editPostMutation = useMutation(
     async ({ postId, content }: { postId: string; content: string }) => {
@@ -235,16 +284,26 @@ export default function ThreadDetailPage() {
   };
 
   const handleEditPost = (postId: string, currentContent: string) => {
-    const newContent = prompt('Edit your post:', currentContent);
-    if (newContent && newContent.trim() && newContent !== currentContent) {
-      editPostMutation.mutate({ postId, content: newContent.trim() });
+    setEditingPost(prev => ({ ...prev, [postId]: currentContent }));
+  };
+
+  const handleSavePost = (postId: string) => {
+    const content = editingPost[postId];
+    if (content && content.trim()) {
+      editPostMutation.mutate({ postId, content: content.trim() }, {
+        onSuccess: () => {
+          setEditingPost(prev => { const next = { ...prev }; delete next[postId]; return next; });
+        }
+      });
     }
   };
 
+  const handleCancelEditPost = (postId: string) => {
+    setEditingPost(prev => { const next = { ...prev }; delete next[postId]; return next; });
+  };
+
   const handleDeletePost = (postId: string) => {
-    if (confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
-      deletePostMutation.mutate(postId);
-    }
+    setConfirmDeletePost(postId);
   };
 
   const handleBookmark = () => {
@@ -272,7 +331,11 @@ export default function ThreadDetailPage() {
     return badges[role] || 'secondary';
   };
 
-  const renderPost = (post: Post, isNested = false) => (
+  const renderPost = (post: Post, isNested = false) => {
+    const canModify = isAdmin || post.author_id === currentUserId;
+    const isEditingThisPost = editingPost[post.id] !== undefined;
+
+    return (
     <Card
       key={post.id}
       className={`mb-3 shadow-sm border-0 ${isNested ? 'ms-4 ms-md-5' : ''}`}
@@ -359,47 +422,72 @@ export default function ThreadDetailPage() {
                 </div>
               </div>
               
-              {/* Post Actions Dropdown */}
-              <Dropdown align="end">
-                <Dropdown.Toggle 
-                  variant="link" 
-                  size="sm" 
-                  className="text-muted p-0"
-                  style={{ boxShadow: 'none' }}
-                >
-                  <FiMoreVertical size={18} />
-                </Dropdown.Toggle>
-                <Dropdown.Menu>
-                  <Dropdown.Item onClick={() => handleEditPost(post.id, post.content)}>
-                    <FiEdit className="me-2" /> Edit
-                  </Dropdown.Item>
-                  <Dropdown.Item><FiFlag className="me-2" /> Report</Dropdown.Item>
-                  <Dropdown.Item onClick={() => handleMarkSolution(post.id)}>
-                    <FiCheckCircle className="me-2" /> {post.is_solution ? 'Unmark Solution' : 'Mark as Solution'}
-                  </Dropdown.Item>
-                  <Dropdown.Divider />
-                  <Dropdown.Item 
-                    className="text-danger"
-                    onClick={() => handleDeletePost(post.id)}
+              {/* Post Actions Dropdown — only shown to author or admin */}
+              {canModify && (
+                <Dropdown align="end">
+                  <Dropdown.Toggle 
+                    variant="link" 
+                    size="sm" 
+                    className="text-muted p-0"
+                    style={{ boxShadow: 'none' }}
                   >
-                    <FiTrash2 className="me-2" /> Delete
-                  </Dropdown.Item>
-                </Dropdown.Menu>
-              </Dropdown>
+                    <FiMoreVertical size={18} />
+                  </Dropdown.Toggle>
+                  <Dropdown.Menu>
+                    {!isEditingThisPost && (
+                      <Dropdown.Item onClick={() => handleEditPost(post.id, post.content)}>
+                        <FiEdit className="me-2" /> Edit
+                      </Dropdown.Item>
+                    )}
+                    <Dropdown.Item><FiFlag className="me-2" /> Report</Dropdown.Item>
+                    <Dropdown.Item onClick={() => handleMarkSolution(post.id)}>
+                      <FiCheckCircle className="me-2" /> {post.is_solution ? 'Unmark Solution' : 'Mark as Solution'}
+                    </Dropdown.Item>
+                    <Dropdown.Divider />
+                    <Dropdown.Item 
+                      className="text-danger"
+                      onClick={() => handleDeletePost(post.id)}
+                    >
+                      <FiTrash2 className="me-2" /> Delete
+                    </Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown>
+              )}
             </div>
 
-            {/* Post Content Text */}
-            <div 
-              className="post-content mb-3" 
-              style={{ 
-                whiteSpace: 'pre-wrap',
-                fontSize: '0.95rem',
-                lineHeight: '1.6',
-                color: '#333'
-              }}
-            >
-              {post.content}
-            </div>
+            {/* Post Content — inline editor when editing, plain text otherwise */}
+            {isEditingThisPost ? (
+              <div className="mb-3">
+                <Form.Control
+                  as="textarea"
+                  rows={5}
+                  value={editingPost[post.id]}
+                  onChange={e => setEditingPost(prev => ({ ...prev, [post.id]: e.target.value }))}
+                  style={{ fontSize: '0.95rem', lineHeight: '1.6', resize: 'vertical' }}
+                  autoFocus
+                />
+                <div className="d-flex gap-2 mt-2">
+                  <Button
+                    size="sm"
+                    style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
+                    onClick={() => handleSavePost(post.id)}
+                    disabled={editPostMutation.isLoading || !editingPost[post.id]?.trim()}
+                  >
+                    {editPostMutation.isLoading ? <Spinner animation="border" size="sm" /> : 'Save'}
+                  </Button>
+                  <Button size="sm" variant="outline-secondary" onClick={() => handleCancelEditPost(post.id)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div 
+                className="post-content mb-3" 
+                style={{ whiteSpace: 'pre-wrap', fontSize: '0.95rem', lineHeight: '1.6', color: '#333' }}
+              >
+                {post.content}
+              </div>
+            )}
 
             {/* Post Action Buttons */}
             <div className="d-flex gap-2 align-items-center">
@@ -437,7 +525,8 @@ export default function ThreadDetailPage() {
         </div>
       </Card.Body>
     </Card>
-  );
+    );
+  };
 
   if (loadingThread) {
     return (
@@ -640,13 +729,23 @@ export default function ThreadDetailPage() {
                   <FiMoreVertical />
                 </Dropdown.Toggle>
                 <Dropdown.Menu>
-                  <Dropdown.Item><FiEdit className="me-2" /> Edit</Dropdown.Item>
+                  {(isAdmin || thread.author_id === currentUserId) && (
+                    <Dropdown.Item onClick={() => setEditThread({ show: true, title: thread.title, content: thread.content })}>
+                      <FiEdit className="me-2" /> Edit
+                    </Dropdown.Item>
+                  )}
                   <Dropdown.Item onClick={handleBookmark}>
                     <FiBookmark className="me-2" /> Bookmark
                   </Dropdown.Item>
                   <Dropdown.Item><FiShare2 className="me-2" /> Share</Dropdown.Item>
-                  <Dropdown.Divider />
-                  <Dropdown.Item className="text-danger"><FiTrash2 className="me-2" /> Delete</Dropdown.Item>
+                  {(isAdmin || thread.author_id === currentUserId) && (
+                    <>
+                      <Dropdown.Divider />
+                      <Dropdown.Item className="text-danger" onClick={() => setConfirmDeleteThread(true)}>
+                        <FiTrash2 className="me-2" /> Delete
+                      </Dropdown.Item>
+                    </>
+                  )}
                 </Dropdown.Menu>
               </Dropdown>
             </div>
@@ -796,6 +895,83 @@ export default function ThreadDetailPage() {
           </div>
         </Alert>
       )}
+
+      {/* ── Thread Edit Modal ── */}
+      <Modal show={editThread.show} onHide={() => setEditThread(s => ({ ...s, show: false }))} size="lg" centered>
+        <Modal.Header closeButton>
+          <Modal.Title><FiEdit className="me-2" />Edit Thread</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form.Group className="mb-3">
+            <Form.Label className="fw-semibold">Title</Form.Label>
+            <Form.Control
+              value={editThread.title}
+              onChange={e => setEditThread(s => ({ ...s, title: e.target.value }))}
+              maxLength={300}
+            />
+          </Form.Group>
+          <Form.Group>
+            <Form.Label className="fw-semibold">Content</Form.Label>
+            <Form.Control
+              as="textarea"
+              rows={10}
+              value={editThread.content}
+              onChange={e => setEditThread(s => ({ ...s, content: e.target.value }))}
+              style={{ resize: 'vertical' }}
+            />
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={() => setEditThread(s => ({ ...s, show: false }))}>
+            Cancel
+          </Button>
+          <Button
+            style={{ background: '#7a8567', borderColor: '#7a8567', color: 'white' }}
+            onClick={() => editThreadMutation.mutate({ title: editThread.title, content: editThread.content })}
+            disabled={editThreadMutation.isLoading || !editThread.title.trim() || !editThread.content.trim()}
+          >
+            {editThreadMutation.isLoading ? <><Spinner animation="border" size="sm" className="me-2" />Saving…</> : 'Save Changes'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* ── Thread Delete Confirm Modal ── */}
+      <Modal show={confirmDeleteThread} onHide={() => setConfirmDeleteThread(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title className="text-danger"><FiTrash2 className="me-2" />Delete Thread</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          Are you sure you want to delete <strong>"{thread?.title}"</strong>? This will also remove all replies and cannot be undone.
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={() => setConfirmDeleteThread(false)}>Cancel</Button>
+          <Button
+            variant="danger"
+            onClick={() => deleteThreadMutation.mutate()}
+            disabled={deleteThreadMutation.isLoading}
+          >
+            {deleteThreadMutation.isLoading ? <><Spinner animation="border" size="sm" className="me-2" />Deleting…</> : 'Yes, Delete'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* ── Post Delete Confirm Modal ── */}
+      <Modal show={!!confirmDeletePost} onHide={() => setConfirmDeletePost(null)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title className="text-danger"><FiTrash2 className="me-2" />Delete Reply</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>Are you sure you want to delete this reply? This action cannot be undone.</Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={() => setConfirmDeletePost(null)}>Cancel</Button>
+          <Button
+            variant="danger"
+            onClick={() => { if (confirmDeletePost) { deletePostMutation.mutate(confirmDeletePost, { onSuccess: () => setConfirmDeletePost(null) }); } }}
+            disabled={deletePostMutation.isLoading}
+          >
+            {deletePostMutation.isLoading ? <><Spinner animation="border" size="sm" className="me-2" />Deleting…</> : 'Yes, Delete'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }
