@@ -1,6 +1,14 @@
 import api from '../lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+export interface Exhibitor {
+  id?: string;
+  company_name: string;
+  logo_url?: string;
+  website_url?: string;
+  description?: string;
+}
+
 export interface RsvpCounts {
   going: number;
   interested: number;
@@ -52,6 +60,7 @@ export interface CommunityEvent {
   rsvp_counts: RsvpCounts;
   user_rsvp: 'going' | 'interested' | 'not_going' | null;
   attendees?: Array<{ id: string; email: string; avatar_url?: string; full_name?: string }>;
+  exhibitors?: Exhibitor[];
 }
 
 export interface CreateEventPayload {
@@ -65,6 +74,7 @@ export interface CreateEventPayload {
   max_attendees?: number;
   is_online?: boolean;
   is_featured?: boolean;
+  exhibitors?: Exhibitor[];
 }
 
 export interface UpdateEventPayload {
@@ -78,6 +88,7 @@ export interface UpdateEventPayload {
   max_attendees?: number | null;
   is_online?: boolean;
   is_featured?: boolean;
+  exhibitors?: Exhibitor[];
 }
 
 export type EventView = 'upcoming' | 'past' | 'all';

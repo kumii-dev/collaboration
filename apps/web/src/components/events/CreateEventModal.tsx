@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Modal, Form, Button, Alert, Row, Col } from 'react-bootstrap';
-import { BsCalendarPlus, BsStar, BsStarFill } from 'react-icons/bs';
-import { CommunityEvent, CreateEventPayload, UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
+import { BsCalendarPlus, BsStar, BsStarFill, BsX } from 'react-icons/bs';
+import { CommunityEvent, CreateEventPayload, Exhibitor, UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
 
 interface Category {
   id: string;
@@ -42,9 +42,10 @@ function toLocalDatetime(iso: string): string {
 
 export default function CreateEventModal({ show, onHide, categories, isAdmin, editEvent, onCreated, onUpdated }: Props) {
   const isEditing = !!editEvent;
-  const [form,    setForm]    = useState({ ...INITIAL });
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
+  const [form,        setForm]        = useState({ ...INITIAL });
+  const [exhibitors,  setExhibitors]  = useState<Exhibitor[]>([]);
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
 
   // Populate form when editing
   useEffect(() => {
@@ -61,8 +62,10 @@ export default function CreateEventModal({ show, onHide, categories, isAdmin, ed
         is_online:     editEvent.is_online,
         is_featured:   editEvent.is_featured,
       });
+      setExhibitors(editEvent.exhibitors ?? []);
     } else {
       setForm({ ...INITIAL, category_id: categories[0]?.id ?? '' });
+      setExhibitors([]);
     }
     setError(null);
   }, [editEvent, show]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -87,6 +90,7 @@ export default function CreateEventModal({ show, onHide, categories, isAdmin, ed
           max_attendees: form.max_attendees ? parseInt(form.max_attendees as string) : null,
           is_online:     form.is_online,
           is_featured:   isAdmin ? form.is_featured : editEvent.is_featured,
+          exhibitors,
         };
         const updated = await eventsApi.update(editEvent.id, payload);
         onUpdated?.(updated);
@@ -102,6 +106,7 @@ export default function CreateEventModal({ show, onHide, categories, isAdmin, ed
           max_attendees: form.max_attendees ? parseInt(form.max_attendees as string) : undefined,
           is_online:     form.is_online,
           is_featured:   isAdmin ? form.is_featured : false,
+          exhibitors,
         };
         const event = await eventsApi.create(payload);
         onCreated?.(event);
@@ -293,6 +298,70 @@ export default function CreateEventModal({ show, onHide, categories, isAdmin, ed
                     style={{ accentColor: '#7a8567' }}
                   />
                 </div>
+              </div>
+            )}
+
+            {/* ── Exhibitors — admin only ── */}
+            {isAdmin && (
+              <div className="mb-4">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <Form.Label style={labelStyle} className="mb-0">Exhibitors</Form.Label>
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    type="button"
+                    style={{ borderRadius: '6px', fontSize: '0.78rem' }}
+                    onClick={() => setExhibitors(p => [...p, { company_name: '', logo_url: '', website_url: '', description: '' }])}
+                  >
+                    + Add Exhibitor
+                  </Button>
+                </div>
+                {exhibitors.length === 0 && (
+                  <p style={{ fontSize: '0.82rem', color: '#aaa', margin: 0 }}>No exhibitors yet.</p>
+                )}
+                {exhibitors.map((ex, i) => (
+                  <div key={i} className="p-3 mb-2" style={{ border: '1px solid #E5E5E3', borderRadius: '8px', background: '#FAFAF8' }}>
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span style={{ fontWeight: 600, fontSize: '0.82rem', color: '#666' }}>Exhibitor {i + 1}</span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        type="button"
+                        style={{ color: '#dc3545', padding: 0 }}
+                        onClick={() => setExhibitors(p => p.filter((_, idx) => idx !== i))}
+                      >
+                        <BsX size={18} />
+                      </Button>
+                    </div>
+                    <Form.Control
+                      className="mb-2"
+                      style={inputStyle}
+                      placeholder="Company name *"
+                      value={ex.company_name}
+                      onChange={e => setExhibitors(p => p.map((x, idx) => idx === i ? { ...x, company_name: e.target.value } : x))}
+                    />
+                    <Form.Control
+                      className="mb-2"
+                      style={inputStyle}
+                      placeholder="Logo URL (https://…)"
+                      value={ex.logo_url ?? ''}
+                      onChange={e => setExhibitors(p => p.map((x, idx) => idx === i ? { ...x, logo_url: e.target.value } : x))}
+                    />
+                    <Form.Control
+                      className="mb-2"
+                      style={inputStyle}
+                      placeholder="Website URL (https://…)"
+                      value={ex.website_url ?? ''}
+                      onChange={e => setExhibitors(p => p.map((x, idx) => idx === i ? { ...x, website_url: e.target.value } : x))}
+                    />
+                    <Form.Control
+                      style={inputStyle}
+                      placeholder="Short description (optional)"
+                      value={ex.description ?? ''}
+                      onChange={e => setExhibitors(p => p.map((x, idx) => idx === i ? { ...x, description: e.target.value } : x))}
+                    />
+                  </div>
+                ))}
               </div>
             )}
 

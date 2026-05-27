@@ -5,9 +5,101 @@ import {
   BsPeopleFill, BsBell, BsPersonCircle, BsLink45Deg,
   BsPencil, BsX, BsStarFill, BsStar,
 } from 'react-icons/bs';
-import { FiExternalLink } from 'react-icons/fi';
-import { CommunityEvent, RsvpCounts, UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
+import { FiExternalLink, FiGlobe } from 'react-icons/fi';
+import { type CommunityEvent, type Exhibitor, type RsvpCounts, type UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
 import EventAttendeesPanel from './EventAttendeesPanel';
+
+// ── Exhibitions panel (read-only display) ────────────────────────────────────
+function ExhibitionsPanel({
+  exhibitors,
+  isAdmin,
+}: {
+  exhibitors: Exhibitor[];
+  isAdmin:    boolean;
+}) {
+  if (exhibitors.length === 0) {
+    return (
+      <div className="text-center py-5" style={{ color: '#aaa' }}>
+        <FiGlobe size={36} style={{ marginBottom: '0.75rem', opacity: 0.4 }} />
+        <p style={{ margin: 0, fontSize: '0.9rem' }}>No exhibitors listed for this event.</p>
+        {isAdmin && <p style={{ margin: 0, fontSize: '0.82rem', color: '#bbb' }}>Edit the event to add exhibitors.</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="row g-3">
+      {exhibitors.map((ex, i) => (
+        <div key={ex.id ?? i} className="col-sm-6 col-md-4">
+          <div
+            style={{
+              border: '1px solid #E5E5E3',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              background: '#FAFAF8',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {/* Logo */}
+            <div
+              style={{
+                height: 110,
+                background: '#F0F0EE',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+              }}
+            >
+              {ex.logo_url ? (
+                <img
+                  src={ex.logo_url}
+                  alt={ex.company_name}
+                  style={{ maxHeight: '90px', maxWidth: '100%', objectFit: 'contain', padding: '8px' }}
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              ) : (
+                <FiGlobe size={36} style={{ color: '#ccc' }} />
+              )}
+            </div>
+            {/* Info */}
+            <div style={{ padding: '0.85rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontWeight: 700, color: '#2D2D2D', fontSize: '0.92rem', marginBottom: '0.3rem' }}>
+                {ex.company_name}
+              </div>
+              {ex.description && (
+                <p style={{ fontSize: '0.8rem', color: '#666', flex: 1, marginBottom: '0.6rem', lineHeight: 1.5 }}>
+                  {ex.description}
+                </p>
+              )}
+              {ex.website_url && (
+                <a
+                  href={ex.website_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.8rem',
+                    color: '#7a8567',
+                    textDecoration: 'none',
+                    fontWeight: 600,
+                    marginTop: 'auto',
+                  }}
+                >
+                  <FiGlobe size={12} /> Visit Website <FiExternalLink size={10} />
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface Category { id: string; name: string; slug?: string; }
 
@@ -27,7 +119,11 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
   const [loading,     setLoading]     = useState(false);
   const [reminderSet, setReminderSet] = useState(false);
   const [error,       setError]       = useState<string | null>(null);
-  const [activeTab,   setActiveTab]   = useState<'details' | 'attendees'>('details');
+  const [activeTab,   setActiveTab]   = useState<'details' | 'attendees' | 'exhibitions'>('details');
+
+  // Exhibitors state (for display + editing)
+  const [exhibitors,      setExhibitors]      = useState<Exhibitor[]>([]);
+  const [editExhibitors,  setEditExhibitors]  = useState<Exhibitor[]>([]);
 
   // Edit mode state
   const [isEditing,   setIsEditing]   = useState(false);
@@ -78,6 +174,8 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
         is_online:     event.is_online,
         is_featured:   event.is_featured,
       });
+      setExhibitors(event.exhibitors ?? []);
+      setEditExhibitors(event.exhibitors ?? []);
     }
   }, [event?.id, event?.user_rsvp, event?.rsvp_counts]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -98,8 +196,10 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
         max_attendees: editForm.max_attendees ? parseInt(editForm.max_attendees as string) : null,
         is_online:     editForm.is_online,
         is_featured:   editForm.is_featured,
+        exhibitors:    editExhibitors,
       };
       const updated = await eventsApi.update(event.id, payload);
+      setExhibitors(updated.exhibitors ?? editExhibitors);
       onEventUpdated?.(updated);
       setIsEditing(false);
     } catch (err: any) {
@@ -235,16 +335,16 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
         </Modal.Header>
 
         <Modal.Body style={{ padding: '1.5rem' }}>
-          {/* ── Admin tab bar ── */}
-          {isAdmin && (
-            <div
-              className="d-flex"
-              style={{ borderBottom: '2px solid #E5E5E3', marginBottom: '1.25rem' }}
-            >
-              {([
-                { key: 'details'   as const, label: 'Details' },
-                { key: 'attendees' as const, label: `Attendees (${counts.going + counts.interested} RSVP'd)` },
-              ]).map(tab => (
+          {/* ── Tab bar — Details/Attendees (admin only) + Exhibitions (always) ── */}
+          <div
+            className="d-flex"
+            style={{ borderBottom: '2px solid #E5E5E3', marginBottom: '1.25rem' }}
+          >
+            {([
+              { key: 'details'      as const, label: 'Details',     show: true },
+              { key: 'attendees'    as const, label: `Attendees (${counts.going + counts.interested} RSVP'd)`, show: isAdmin },
+              { key: 'exhibitions'  as const, label: `Exhibitions${exhibitors.length > 0 ? ` (${exhibitors.length})` : ''}`, show: true },
+            ] as const).filter(t => t.show).map(tab => (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
@@ -268,11 +368,16 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
                 </button>
               ))}
             </div>
-          )}
 
           {/* ── Attendees panel (admin only) ── */}
           {isAdmin && activeTab === 'attendees' ? (
             <EventAttendeesPanel eventId={event.id} />
+          ) : activeTab === 'exhibitions' ? (
+            /* ── Exhibitions panel ── */
+            <ExhibitionsPanel
+              exhibitors={exhibitors}
+              isAdmin={isAdmin}
+            />
           ) : (
             <>
           {error && (
@@ -378,6 +483,66 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
                     onChange={e => { e.stopPropagation(); setEF('is_featured', e.target.checked); }}
                   />
                 </div>
+              </div>
+
+              {/* ── Exhibitors editor (admin edit form) ── */}
+              <div className="mb-4">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <Form.Label style={labelStyle} className="mb-0">Exhibitors</Form.Label>
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    style={{ borderRadius: '6px', fontSize: '0.78rem' }}
+                    onClick={() => setEditExhibitors(p => [...p, { company_name: '', logo_url: '', website_url: '', description: '' }])}
+                  >
+                    + Add Exhibitor
+                  </Button>
+                </div>
+                {editExhibitors.length === 0 && (
+                  <p style={{ fontSize: '0.82rem', color: '#aaa', margin: 0 }}>No exhibitors yet. Click "+ Add Exhibitor" to add one.</p>
+                )}
+                {editExhibitors.map((ex, i) => (
+                  <div key={i} className="p-3 mb-2" style={{ border: '1px solid #E5E5E3', borderRadius: '8px', background: '#FAFAF8' }}>
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span style={{ fontWeight: 600, fontSize: '0.82rem', color: '#666' }}>Exhibitor {i + 1}</span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        style={{ color: '#dc3545', padding: 0 }}
+                        onClick={() => setEditExhibitors(p => p.filter((_, idx) => idx !== i))}
+                      >
+                        <BsX size={18} />
+                      </Button>
+                    </div>
+                    <Form.Control
+                      className="mb-2"
+                      style={inputStyle}
+                      placeholder="Company name *"
+                      value={ex.company_name}
+                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, company_name: e.target.value } : x))}
+                    />
+                    <Form.Control
+                      className="mb-2"
+                      style={inputStyle}
+                      placeholder="Logo URL (https://…)"
+                      value={ex.logo_url ?? ''}
+                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, logo_url: e.target.value } : x))}
+                    />
+                    <Form.Control
+                      className="mb-2"
+                      style={inputStyle}
+                      placeholder="Website URL (https://…)"
+                      value={ex.website_url ?? ''}
+                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, website_url: e.target.value } : x))}
+                    />
+                    <Form.Control
+                      style={inputStyle}
+                      placeholder="Short description (optional)"
+                      value={ex.description ?? ''}
+                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, description: e.target.value } : x))}
+                    />
+                  </div>
+                ))}
               </div>
 
               <div className="d-flex gap-2 justify-content-end">

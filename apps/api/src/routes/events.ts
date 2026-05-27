@@ -9,6 +9,14 @@ import logger from '../logger.js';
 const router = Router();
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
+const exhibitorSchema = z.object({
+  id:           z.string().optional(),
+  company_name: z.string().min(1).max(200),
+  logo_url:     z.string().url().optional().or(z.literal('')),
+  website_url:  z.string().url().optional().or(z.literal('')),
+  description:  z.string().max(500).optional(),
+});
+
 const createEventSchema = z.object({
   category_id:   z.string().uuid(),
   title:         z.string().min(1).max(200),
@@ -20,6 +28,7 @@ const createEventSchema = z.object({
   max_attendees: z.number().int().positive().optional(),
   is_online:     z.boolean().optional().default(false),
   is_featured:   z.boolean().optional().default(false),
+  exhibitors:    z.array(exhibitorSchema).optional().default([]),
 });
 
 const updateEventSchema = z.object({
@@ -32,6 +41,7 @@ const updateEventSchema = z.object({
   max_attendees: z.number().int().positive().nullable().optional(),
   is_online:     z.boolean().optional(),
   is_featured:   z.boolean().optional(),
+  exhibitors:    z.array(exhibitorSchema).optional(),
 }).refine(data => Object.keys(data).length > 0, { message: 'At least one field is required' });
 
 const rsvpSchema = z.object({
