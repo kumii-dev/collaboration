@@ -359,6 +359,98 @@ router.patch(
 );
 
 /**
+ * GET /api/moderation/actions
+ * List moderation actions history (moderators only)
+ * Query params: limit (default 50), offset (default 0)
+ */
+router.get(
+  '/actions',
+  authenticate,
+  requireModerator,
+  validateQuery(z.object({
+    limit:  z.coerce.number().min(1).max(100).default(50),
+    offset: z.coerce.number().min(0).default(0),
+  })),
+  async (req: AuthRequest, res) => {
+    try {
+      const limit  = Number(req.query.limit)  || 50;
+      const offset = Number(req.query.offset) || 0;
+
+      const { data, error, count } = await supabaseAdmin
+        .from('moderation_actions')
+        .select(`
+          id,
+          action_type,
+          reason,
+          duration_days,
+          expires_at,
+          created_at,
+          report_id,
+          moderator:moderator_id (id, full_name, email),
+          target_user:target_user_id (id, full_name, email)
+        `, { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (error) {
+        logger.error('Failed to fetch moderation actions', { error });
+        return res.status(500).json({ success: false, error: 'Failed to fetch actions' });
+      }
+
+      res.json({ success: true, data: { actions: data ?? [], total: count ?? 0, limit, offset } });
+    } catch (error) {
+      logger.error('Get actions error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * GET /api/moderation/audit-log
+ * List audit logs (moderators only)
+ * Query params: limit (default 100), offset (default 0)
+ */
+router.get(
+  '/audit-log',
+  authenticate,
+  requireModerator,
+  validateQuery(z.object({
+    limit:  z.coerce.number().min(1).max(200).default(100),
+    offset: z.coerce.number().min(0).default(0),
+  })),
+  async (req: AuthRequest, res) => {
+    try {
+      const limit  = Number(req.query.limit)  || 100;
+      const offset = Number(req.query.offset) || 0;
+
+      const { data, error, count } = await supabaseAdmin
+        .from('audit_logs')
+        .select(`
+          id,
+          event_type,
+          resource_type,
+          resource_id,
+          details,
+          created_at,
+          actor:user_id (id, full_name, email)
+        `, { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (error) {
+        logger.error('Failed to fetch audit logs', { error });
+        return res.status(500).json({ success: false, error: 'Failed to fetch audit log' });
+      }
+
+      res.json({ success: true, data: { logs: data ?? [], total: count ?? 0, limit, offset } });
+    } catch (error) {
+      logger.error('Get audit log error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
  * GET /api/moderation/reports
  * List all reports with optional status filter (moderators only)
  * Query params:

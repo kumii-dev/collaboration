@@ -20,44 +20,47 @@ const safeFormat = (dateStr: string | null | undefined, fmt: string): string => 
 
 interface Report {
   id: string;
-  content_type: 'thread' | 'post' | 'message' | 'user';
-  content_id: string;
+  report_type: 'message' | 'post' | 'user' | 'group' | 'thread';
   reason: string;
-  description?: string;
-  reporter_name: string;
   status: 'pending' | 'reviewing' | 'resolved' | 'dismissed';
   created_at: string;
+  notes?: string;
   content_preview?: string;
-  reported_user_name?: string;
+  content_title?: string;
+  reporter?: { id: string; full_name?: string; email: string };
+  reported_user?: { id: string; full_name?: string; email: string };
 }
 
 interface ModerationAction {
   id: string;
-  report_id: string;
-  moderator_name: string;
-  action_type: 'warning' | 'content_removal' | 'ban' | 'dismiss';
+  report_id?: string;
+  action_type: 'warn' | 'remove_content' | 'suspend' | 'ban' | 'restore';
   reason: string;
+  duration_days?: number;
+  expires_at?: string;
   created_at: string;
-  target_user_name?: string;
+  moderator?: { id: string; full_name?: string; email: string };
+  target_user?: { id: string; full_name?: string; email: string };
 }
 
 interface AuditLog {
   id: string;
-  action: string;
-  moderator_name: string;
-  target_type: string;
-  target_id: string;
-  details: string;
+  event_type: string;
+  resource_type?: string;
+  resource_id?: string;
+  details?: Record<string, unknown>;
   created_at: string;
+  actor?: { id: string; full_name?: string; email: string };
 }
 
 export default function ModerationPage() {
   const [selectedTab, setSelectedTab] = useState<string>('reports');
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [actionForm, setActionForm] = useState({
-    action_type: 'dismiss' as 'warning' | 'content_removal' | 'ban' | 'dismiss',
+    action_type: 'warn' as 'warn' | 'remove_content' | 'suspend' | 'ban' | 'restore',
     reason: '',
-    ban_duration_days: 7
+    ban_duration_days: 7,
+    target_user_id: '',
   });
   const queryClient = useQueryClient();
 
@@ -83,7 +86,7 @@ export default function ModerationPage() {
         params: { limit: 50 }
       });
       const raw = response.data?.data ?? response.data;
-      const arr = raw?.data ?? raw;
+      const arr = raw?.actions ?? raw?.data ?? raw;
       return (Array.isArray(arr) ? arr : []) as ModerationAction[];
     }
   );
@@ -96,7 +99,7 @@ export default function ModerationPage() {
         params: { limit: 100 }
       });
       const raw = response.data?.data ?? response.data;
-      const arr = raw?.data ?? raw;
+      const arr = raw?.logs ?? raw?.data ?? raw;
       return (Array.isArray(arr) ? arr : []) as AuditLog[];
     }
   );
@@ -119,10 +122,19 @@ export default function ModerationPage() {
 
   // Handle moderation action mutation
   const handleActionMutation = useMutation(
-    async ({ reportId, actionType, reason }: { reportId: string; actionType: string; reason: string }) => {
-      const response = await api.post(`/moderation/reports/${reportId}/action`, {
-        action_type: actionType,
-        reason
+    async ({ targetUserId, reportId, actionType, reason, durationDays }: {
+      targetUserId: string;
+      reportId?: string;
+      actionType: string;
+      reason: string;
+      durationDays?: number;
+    }) => {
+      const response = await api.post('/moderation/actions', {
+        targetUserId,
+        reportId: reportId || undefined,
+        actionType,
+        reason,
+        durationDays: durationDays || undefined,
       });
       return response.data;
     },
@@ -132,7 +144,7 @@ export default function ModerationPage() {
         queryClient.invalidateQueries('moderation-actions');
         queryClient.invalidateQueries('moderation-audit-logs');
         setSelectedReportId(null);
-        setActionForm({ action_type: 'dismiss', reason: '', ban_duration_days: 7 });
+        setActionForm({ action_type: 'warn', reason: '', ban_duration_days: 7, target_user_id: '' });
       }
     }
   );
@@ -142,11 +154,19 @@ export default function ModerationPage() {
       alert('Please select a report and provide a reason');
       return;
     }
-
+    const targetUserId = selectedReport?.reported_user?.id ?? actionForm.target_user_id;
+    if (!targetUserId) {
+      alert('No target user found for this report');
+      return;
+    }
     handleActionMutation.mutate({
+      targetUserId,
       reportId: selectedReportId,
       actionType: actionForm.action_type,
-      reason: actionForm.reason
+      reason: actionForm.reason,
+      durationDays: actionForm.action_type === 'ban' || actionForm.action_type === 'suspend'
+        ? actionForm.ban_duration_days
+        : undefined,
     });
   };
 
@@ -162,18 +182,19 @@ export default function ModerationPage() {
 
   const getActionTypeBadge = (actionType: string) => {
     const variants: Record<string, string> = {
-      warning: 'warning',
-      content_removal: 'danger',
-      ban: 'danger',
-      dismiss: 'secondary'
+      warn:           'warning',
+      remove_content: 'danger',
+      suspend:        'warning',
+      ban:            'danger',
+      restore:        'success',
     };
     const icons: Record<string, JSX.Element> = {
-      warning: <FiAlertCircle className="me-1" />,
-      content_removal: <FiX className="me-1" />,
-      ban: <FiShield className="me-1" />,
-      dismiss: <FiCheck className="me-1" />
+      warn:           <FiAlertCircle className="me-1" />,
+      remove_content: <FiX className="me-1" />,
+      suspend:        <FiShield className="me-1" />,
+      ban:            <FiShield className="me-1" />,
+      restore:        <FiCheck className="me-1" />,
     };
-    
     return (
       <Badge bg={variants[actionType] || 'secondary'}>
         {icons[actionType]}
@@ -244,7 +265,7 @@ export default function ModerationPage() {
                     <div className="d-flex justify-content-between align-items-start mb-2">
                       <div>
                         <Badge bg="light" text="dark" className="me-2">
-                          {report.content_type}
+                          {report.report_type}
                         </Badge>
                         {getStatusBadge(report.status)}
                       </div>
@@ -255,9 +276,9 @@ export default function ModerationPage() {
 
                     <h6 className="mb-2">Reason: {report.reason}</h6>
 
-                    {report.description && (
-                      <p className="text-muted mb-2" style={{ fontSize: '14px' }}>
-                        {report.description}
+                    {report.content_title && (
+                      <p className="fw-semibold mb-1" style={{ fontSize: '14px' }}>
+                        {report.content_title}
                       </p>
                     )}
 
@@ -272,11 +293,11 @@ export default function ModerationPage() {
 
                     <div className="d-flex justify-content-between align-items-center">
                       <small className="text-muted">
-                        Reported by: {report.reporter_name}
+                        Reported by: {report.reporter?.full_name ?? report.reporter?.email ?? '—'}
                       </small>
-                      {report.reported_user_name && (
+                      {report.reported_user && (
                         <small className="text-muted">
-                          Target: {report.reported_user_name}
+                          Target: {report.reported_user.full_name ?? report.reported_user.email}
                         </small>
                       )}
                     </div>
@@ -299,17 +320,17 @@ export default function ModerationPage() {
                         <div className="mb-1">
                           <small className="text-muted">Type:</small>{' '}
                           <Badge bg="light" text="dark">
-                            {selectedReport.content_type}
+                            {selectedReport.report_type}
                           </Badge>
                         </div>
                         <div className="mb-1">
                           <small className="text-muted">Reason:</small>{' '}
                           {selectedReport.reason}
                         </div>
-                        {selectedReport.reported_user_name && (
+                        {selectedReport.reported_user && (
                           <div className="mb-1">
                             <small className="text-muted">Target User:</small>{' '}
-                            {selectedReport.reported_user_name}
+                            {selectedReport.reported_user.full_name ?? selectedReport.reported_user.email}
                           </div>
                         )}
                       </div>
@@ -329,14 +350,15 @@ export default function ModerationPage() {
                             })
                           }
                         >
-                          <option value="dismiss">Dismiss Report</option>
-                          <option value="warning">Issue Warning</option>
-                          <option value="content_removal">Remove Content</option>
+                          <option value="warn">Issue Warning</option>
+                          <option value="remove_content">Remove Content</option>
+                          <option value="suspend">Suspend User</option>
                           <option value="ban">Ban User</option>
+                          <option value="restore">Restore / Unban</option>
                         </Form.Select>
                       </Form.Group>
 
-                      {actionForm.action_type === 'ban' && (
+                      {(actionForm.action_type === 'ban' || actionForm.action_type === 'suspend') && (
                         <Form.Group className="mb-3">
                           <Form.Label>Ban Duration (days)</Form.Label>
                           <Form.Control
@@ -423,8 +445,8 @@ export default function ModerationPage() {
                   <tr key={action.id}>
                     <td>{safeFormat(action.created_at, 'MMM d, yyyy HH:mm')}</td>
                     <td>{getActionTypeBadge(action.action_type)}</td>
-                    <td>{action.moderator_name}</td>
-                    <td>{action.target_user_name || '-'}</td>
+                    <td>{action.moderator?.full_name ?? action.moderator?.email ?? '—'}</td>
+                    <td>{action.target_user?.full_name ?? action.target_user?.email ?? '—'}</td>
                     <td>
                       <small className="text-muted">{action.reason}</small>
                     </td>
@@ -469,19 +491,22 @@ export default function ModerationPage() {
                     <td>
                       <small>{safeFormat(log.created_at, 'MMM d, yyyy HH:mm:ss')}</small>
                     </td>
-                    <td>{log.moderator_name}</td>
+                    <td>{log.actor?.full_name ?? log.actor?.email ?? '—'}</td>
                     <td>
                       <Badge bg="light" text="dark">
-                        {log.action}
+                        {log.event_type}
                       </Badge>
                     </td>
                     <td>
                       <small>
-                        {log.target_type}: {log.target_id.slice(0, 8)}...
+                        {log.resource_type ?? '—'}
+                        {log.resource_id ? `: ${log.resource_id.slice(0, 8)}…` : ''}
                       </small>
                     </td>
                     <td>
-                      <small className="text-muted">{log.details}</small>
+                      <small className="text-muted">
+                        {log.details ? JSON.stringify(log.details).slice(0, 80) : '—'}
+                      </small>
                     </td>
                   </tr>
                 ))}

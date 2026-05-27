@@ -11,9 +11,15 @@ import {
 } from '../../lib/boardroomApi';
 
 interface Props {
-  show:      boolean;
-  onHide:    () => void;
-  boardroom: Boardroom;
+  show:             boolean;
+  onHide:           () => void;
+  boardroom:        Boardroom;
+  /** YYYY-MM-DD — open modal to this day (must be in getBookableDates list) */
+  initialDate?:     string;
+  /** "HH:MM" SAST — pre-select this slot once availability loads */
+  initialSASTKey?:  string;
+  /** Called after a slot is successfully requested */
+  onSuccess?:       () => void;
 }
 
 const BTN_STYLE    = { background: '#7a8567', borderColor: '#7a8567', color: 'white' };
@@ -22,7 +28,7 @@ const MINE_SLOT    = { background: '#e8f4d4', color: '#7a8567', borderColor: '#c
 const BOOKED_SLOT  = { background: '#f5f5f5', color: '#aaa', borderColor: '#e5e5e3', cursor: 'not-allowed' };
 const AVAIL_SLOT   = { background: 'white', color: '#444', borderColor: '#E5E5E3', cursor: 'pointer' };
 
-export default function BookingCalendarModal({ show, onHide, boardroom }: Props) {
+export default function BookingCalendarModal({ show, onHide, boardroom, initialDate, initialSASTKey, onSuccess }: Props) {
   const qc          = useQueryClient();
   const dates       = getBookableDates();
   const [dayIdx,    setDayIdx]    = useState(0);
@@ -30,23 +36,32 @@ export default function BookingCalendarModal({ show, onHide, boardroom }: Props)
   const [notes,     setNotes]     = useState('');
   const [success,   setSuccess]   = useState(false);
   const [apiError,  setApiError]  = useState<string | null>(null);
+  // Tracks whether we've already auto-selected via initialSASTKey (so user can override)
+  const didAutoSelect = React.useRef(false);
 
   const currentDay = dates[dayIdx];
 
-  // Reset when modal opens
+  // Reset when modal opens; jump to initialDate if provided
   React.useEffect(() => {
     if (show) {
-      setDayIdx(0);
+      didAutoSelect.current = false;
       setSelected(null);
       setNotes('');
       setSuccess(false);
       setApiError(null);
+      if (initialDate) {
+        const idx = dates.findIndex(d => d.iso === initialDate);
+        setDayIdx(idx >= 0 ? idx : 0);
+      } else {
+        setDayIdx(0);
+      }
     }
   }, [show]);
 
-  // Reset selected slot when day changes
+  // Reset selected slot when day changes (but preserve didAutoSelect flag)
   React.useEffect(() => {
     setSelected(null);
+    didAutoSelect.current = false;
   }, [dayIdx]);
 
   const { data: slots, isLoading: slotsLoading } = useQuery(
@@ -54,6 +69,21 @@ export default function BookingCalendarModal({ show, onHide, boardroom }: Props)
     () => fetchAvailability(boardroom.id, currentDay!.iso),
     { enabled: !!currentDay, staleTime: 30_000 }
   );
+
+  // Auto-select initialSASTKey once availability data loads (runs after slots is declared)
+  React.useEffect(() => {
+    if (!initialSASTKey || didAutoSelect.current || !slots || slots.length === 0) return;
+    const target = slots.find(s => {
+      const d    = new Date(s.slot_start);
+      const sast = new Date(d.getTime() + 2 * 60 * 60 * 1000);
+      const key  = `${String(sast.getUTCHours()).padStart(2, '0')}:${String(sast.getUTCMinutes()).padStart(2, '0')}`;
+      return key === initialSASTKey;
+    });
+    if (target && target.available && !target.is_mine) {
+      setSelected(target);
+      didAutoSelect.current = true;
+    }
+  }, [slots, initialSASTKey]);
 
   const bookMutation = useMutation(
     () => createBooking({
@@ -65,6 +95,7 @@ export default function BookingCalendarModal({ show, onHide, boardroom }: Props)
       onSuccess: () => {
         qc.invalidateQueries(['boardroom-availability', boardroom.id]);
         qc.invalidateQueries('my-bookings');
+        onSuccess?.();
         setSuccess(true);
         setSelected(null);
         setNotes('');
