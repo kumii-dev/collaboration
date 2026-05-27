@@ -50,16 +50,16 @@ interface ThreadMeta { total: number; limit: number; offset: number }
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
+interface AdminCategory extends Category { board_count: number }
+
 const api = {
-  // Categories
+  // Categories — use admin endpoint so archived rows are included
   listCategories: () =>
-    apiClient.get('/forum/categories').then((r: { data: { data: Category[] } }) => r.data.data),
+    apiClient.get('/forum/admin/categories').then((r: { data: { data: AdminCategory[] } }) => r.data.data),
   createCategory: (body: Partial<Category>) =>
     apiClient.post('/forum/admin/categories', body).then((r: { data: unknown }) => r.data),
-  updateCategory: (id: string, body: Partial<Category>) =>
+  updateCategory: (id: string, body: Partial<Category> & { archived?: boolean }) =>
     apiClient.put(`/forum/admin/categories/${id}`, body).then((r: { data: unknown }) => r.data),
-  archiveCategory: (id: string) =>
-    apiClient.delete(`/forum/admin/categories/${id}`).then((r: { data: unknown }) => r.data),
 
   // Boards
   listBoards: (categoryId: string) =>
@@ -278,30 +278,40 @@ const BoardModal: React.FC<{
 const CategoriesTab: React.FC = () => {
   const qc = useQueryClient();
   const [catModal, setCatModal] = useState<{ show: boolean; initial?: Partial<Category> }>({ show: false });
-  const [confirm, setConfirm] = useState<{ show: boolean; id?: string }>({ show: false });
+  const [confirm, setConfirm] = useState<{ show: boolean; id?: string; action?: 'archive' | 'unarchive' }>({ show: false });
   const [error, setError] = useState<string | null>(null);
 
-  const { data: categories = [], isLoading } = useQuery<Category[]>('admin-categories', api.listCategories);
+  const { data: categories = [], isLoading } = useQuery<AdminCategory[]>('admin-categories', api.listCategories);
 
+  // Fix #3 — pass id+data together to avoid stale closure
   const saveMut = useMutation(
-    (data: Partial<Category>) => catModal.initial?.id
-      ? api.updateCategory(catModal.initial.id, data)
-      : api.createCategory(data),
+    ({ id, data }: { id?: string; data: Partial<Category> }) =>
+      id ? api.updateCategory(id, data) : api.createCategory(data),
     {
       onSuccess: () => { qc.invalidateQueries('admin-categories'); setCatModal({ show: false }); },
       onError: () => setError('Failed to save category'),
     }
   );
 
-  const archiveMut = useMutation((id: string) => api.archiveCategory(id), {
-    onSuccess: () => { qc.invalidateQueries('admin-categories'); setConfirm({ show: false }); },
-    onError: () => setError('Failed to archive category'),
-  });
+  // Fix #1 & #2 — archive/unarchive both use PUT endpoint with archived flag
+  const archiveMut = useMutation(
+    ({ id, archived }: { id: string; archived: boolean }) => api.updateCategory(id, { archived }),
+    {
+      onSuccess: () => { qc.invalidateQueries('admin-categories'); setConfirm({ show: false }); },
+      onError: () => setError('Failed to update category'),
+    }
+  );
+
+  const activeCount   = categories.filter(c => !c.archived).length;
+  const archivedCount = categories.filter(c =>  c.archived).length;
 
   return (
     <>
       {error && <Alert variant="danger" dismissible onClose={() => setError(null)} className="small py-2">{error}</Alert>}
-      <div className="d-flex justify-content-end mb-3">
+      <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <span className="text-muted small">
+          {activeCount} active{archivedCount > 0 ? `, ${archivedCount} archived` : ''}
+        </span>
         <Button size="sm" style={{ background: 'linear-gradient(135deg,#4a6741,#7a9e6e)', border: 'none' }}
           onClick={() => setCatModal({ show: true })}>
           <FiPlus className="me-1" /> New Category
@@ -309,19 +319,25 @@ const CategoriesTab: React.FC = () => {
       </div>
       {isLoading ? (
         <div className="text-center py-5"><Spinner animation="border" size="sm" /></div>
+      ) : categories.length === 0 ? (
+        <div className="text-center py-5 text-muted small">
+          <div style={{ fontSize: 32 }}>📂</div>
+          <p className="mt-2">No categories yet. Create your first one.</p>
+        </div>
       ) : (
         <Table hover size="sm" className="align-middle small">
           <thead className="table-light">
             <tr>
-              <th>Icon</th><th>Name</th><th>Description</th><th className="text-center">Order</th><th className="text-center">Status</th><th></th>
+              <th>Icon</th><th>Name</th><th>Description</th><th className="text-center">Boards</th><th className="text-center">Order</th><th className="text-center">Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {categories.map(cat => (
-              <tr key={cat.id}>
+              <tr key={cat.id} className={cat.archived ? 'text-muted' : ''}>
                 <td className="fs-5">{cat.icon || '—'}</td>
                 <td className="fw-semibold">{cat.name}</td>
-                <td className="text-muted" style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.description}</td>
+                <td className="text-muted" style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.description}</td>
+                <td className="text-center">{cat.board_count}</td>
                 <td className="text-center">{cat.sort_order}</td>
                 <td className="text-center">
                   {cat.archived
@@ -334,9 +350,14 @@ const CategoriesTab: React.FC = () => {
                       onClick={() => setCatModal({ show: true, initial: cat })}>
                       <FiEdit2 size={13} />
                     </Button>
-                    {!cat.archived && (
-                      <Button variant="outline-danger" size="sm" className="py-0 px-2"
-                        onClick={() => setConfirm({ show: true, id: cat.id })}>
+                    {cat.archived ? (
+                      <Button variant="outline-success" size="sm" className="py-0 px-2" title="Unarchive"
+                        onClick={() => setConfirm({ show: true, id: cat.id, action: 'unarchive' })}>
+                        <FiEye size={13} />
+                      </Button>
+                    ) : (
+                      <Button variant="outline-danger" size="sm" className="py-0 px-2" title="Archive"
+                        onClick={() => setConfirm({ show: true, id: cat.id, action: 'archive' })}>
                         <FiEyeOff size={13} />
                       </Button>
                     )}
@@ -352,15 +373,17 @@ const CategoriesTab: React.FC = () => {
         show={catModal.show}
         initial={catModal.initial}
         onHide={() => setCatModal({ show: false })}
-        onSave={data => saveMut.mutate(data)}
+        onSave={data => saveMut.mutate({ id: catModal.initial?.id, data })}
         loading={saveMut.isLoading}
       />
       <ConfirmModal
         show={confirm.show}
-        title="Archive Category"
-        message="This will hide the category from all users. Boards and threads inside it remain intact."
+        title={confirm.action === 'unarchive' ? 'Unarchive Category' : 'Archive Category'}
+        message={confirm.action === 'unarchive'
+          ? 'This will make the category and all its boards visible to users again.'
+          : 'This will hide the category from all users. Boards and threads inside it remain intact and can be restored by unarchiving.'}
         variant="warning"
-        onConfirm={() => confirm.id && archiveMut.mutate(confirm.id)}
+        onConfirm={() => confirm.id && archiveMut.mutate({ id: confirm.id, archived: confirm.action === 'archive' })}
         onHide={() => setConfirm({ show: false })}
         loading={archiveMut.isLoading}
       />
@@ -387,10 +410,10 @@ const BoardsTab: React.FC = () => {
     { enabled: !!activeCatId }
   );
 
+  // Fix #3 — pass id+data together to avoid stale closure
   const saveMut = useMutation(
-    (data: Partial<Board>) => boardModal.initial?.id
-      ? api.updateBoard(boardModal.initial.id, data)
-      : api.createBoard(data),
+    ({ id, data }: { id?: string; data: Partial<Board> }) =>
+      id ? api.updateBoard(id, data) : api.createBoard(data),
     {
       onSuccess: () => { qc.invalidateQueries(['admin-boards', activeCatId]); setBoardModal({ show: false }); },
       onError: () => setError('Failed to save board'),
@@ -455,7 +478,7 @@ const BoardsTab: React.FC = () => {
         initial={boardModal.initial}
         categories={categories}
         onHide={() => setBoardModal({ show: false })}
-        onSave={data => saveMut.mutate(data)}
+        onSave={data => saveMut.mutate({ id: boardModal.initial?.id, data })}
         loading={saveMut.isLoading}
       />
       <ConfirmModal
@@ -475,15 +498,31 @@ const BoardsTab: React.FC = () => {
 const ThreadsTab: React.FC = () => {
   const qc = useQueryClient();
   const [deletedFilter, setDeletedFilter] = useState<'all' | 'false' | 'true'>('all');
+  const [searchInput,   setSearchInput]   = useState('');
+  const [search,        setSearch]        = useState('');   // debounced
   const [offset, setOffset] = useState(0);
   const limit = 25;
   const [confirm, setConfirm] = useState<{ show: boolean; id?: string; action?: 'delete' | 'restore' }>({ show: false });
   const [error, setError] = useState<string | null>(null);
 
-  const qKey = ['admin-threads', deletedFilter, offset];
+  // Debounce search input by 400 ms
+  React.useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setOffset(0); }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const qKey = ['admin-threads', deletedFilter, search, offset];
   const { data, isLoading, refetch } = useQuery(
     qKey,
-    () => api.listThreads({ deleted: deletedFilter, limit: String(limit), offset: String(offset) }),
+    () => {
+      const params: Record<string, string> = {
+        deleted: deletedFilter,
+        limit: String(limit),
+        offset: String(offset),
+      };
+      if (search) params.q = search;
+      return api.listThreads(params);
+    },
     { keepPreviousData: true }
   );
 
@@ -512,6 +551,14 @@ const ThreadsTab: React.FC = () => {
     <>
       {error && <Alert variant="danger" dismissible onClose={() => setError(null)} className="small py-2">{error}</Alert>}
       <div className="d-flex flex-wrap gap-2 mb-3 align-items-center">
+        <Form.Control
+          type="search"
+          size="sm"
+          placeholder="Search threads…"
+          style={{ width: 200 }}
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
+        />
         <Form.Select size="sm" style={{ width: 'auto' }} value={deletedFilter} onChange={e => { setDeletedFilter(e.target.value as typeof deletedFilter); setOffset(0); }}>
           <option value="all">All threads</option>
           <option value="false">Active only</option>

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../supabase.js';
-import { authenticate, requireModerator, AuthRequest } from '../middleware/auth.js';
+import { authenticate, requireModerator, requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { validateBody, validateQuery, validateParams } from '../middleware/validation.js';
 import logger from '../logger.js';
 import { sanitizeContent, extractMentions, containsProfanity } from '../utils/helpers.js';
@@ -2006,6 +2006,377 @@ router.delete(
       res.json({ success: true, data: { deleted: true } });
     } catch (error) {
       logger.error('DELETE /forum/threads/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// ADMIN — Categories CRUD
+// ════════════════════════════════════════════════════════════════════════════
+
+const adminCategoryCreateSchema = z.object({
+  name:        z.string().min(1).max(100),
+  description: z.string().min(1).max(500),
+  icon:        z.string().max(10).optional(),
+  sort_order:  z.number().int().min(0).optional(),
+});
+
+const adminCategoryUpdateSchema = adminCategoryCreateSchema.partial().extend({
+  archived: z.boolean().optional(),
+});
+
+/**
+ * GET /api/forum/admin/categories
+ * List ALL categories including archived ones. Admin only.
+ */
+router.get(
+  '/admin/categories',
+  authenticate,
+  requireAdmin,
+  async (_req: AuthRequest, res) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('forum_categories')
+        .select(`
+          id, name, description, icon, sort_order, archived,
+          forum_boards (id)
+        `)
+        .order('sort_order', { ascending: true });
+
+      if (error) {
+        logger.error('Admin: list categories failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to fetch categories' });
+      }
+
+      const result = data.map(c => ({
+        ...c,
+        board_count: c.forum_boards?.length ?? 0,
+        forum_boards: undefined,
+      }));
+
+      res.json({ success: true, data: result });
+    } catch (error) {
+      logger.error('GET /forum/admin/categories error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * POST /api/forum/admin/categories
+ * Create a new forum category. Admin only.
+ */
+router.post(
+  '/admin/categories',
+  authenticate,
+  requireAdmin,
+  validateBody(adminCategoryCreateSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { name, description, icon, sort_order } = req.body;
+      const { data, error } = await supabaseAdmin
+        .from('forum_categories')
+        .insert({ name, description, icon: icon ?? null, sort_order: sort_order ?? 0 })
+        .select('id, name, description, icon, sort_order, archived')
+        .single();
+
+      if (error) {
+        logger.error('Admin: create category failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to create category' });
+      }
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      logger.error('POST /forum/admin/categories error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * PUT /api/forum/admin/categories/:id
+ * Update a forum category. Admin only.
+ */
+router.put(
+  '/admin/categories/:id',
+  authenticate,
+  requireAdmin,
+  validateParams(z.object({ id: z.string().uuid() })),
+  validateBody(adminCategoryUpdateSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const updates: Record<string, unknown> = {};
+      if (req.body.name        !== undefined) updates.name        = req.body.name;
+      if (req.body.description !== undefined) updates.description = req.body.description;
+      if (req.body.icon        !== undefined) updates.icon        = req.body.icon;
+      if (req.body.sort_order  !== undefined) updates.sort_order  = req.body.sort_order;
+      if (req.body.archived    !== undefined) updates.archived    = req.body.archived;
+
+      const { data, error } = await supabaseAdmin
+        .from('forum_categories')
+        .update(updates)
+        .eq('id', id)
+        .select('id, name, description, icon, sort_order, archived')
+        .single();
+
+      if (error) {
+        logger.error('Admin: update category failed', { id, error });
+        return res.status(500).json({ success: false, error: 'Failed to update category' });
+      }
+      if (!data) return res.status(404).json({ success: false, error: 'Category not found' });
+      res.json({ success: true, data });
+    } catch (error) {
+      logger.error('PUT /forum/admin/categories/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/forum/admin/categories/:id
+ * Archive (soft-delete) a forum category. Admin only.
+ * Sets archived=true; boards + threads remain intact.
+ */
+router.delete(
+  '/admin/categories/:id',
+  authenticate,
+  requireAdmin,
+  validateParams(z.object({ id: z.string().uuid() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { error } = await supabaseAdmin
+        .from('forum_categories')
+        .update({ archived: true })
+        .eq('id', id);
+
+      if (error) {
+        logger.error('Admin: archive category failed', { id, error });
+        return res.status(500).json({ success: false, error: 'Failed to archive category' });
+      }
+      res.json({ success: true, data: { id, archived: true } });
+    } catch (error) {
+      logger.error('DELETE /forum/admin/categories/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// ADMIN — Boards CRUD
+// ════════════════════════════════════════════════════════════════════════════
+
+const adminBoardCreateSchema = z.object({
+  name:          z.string().min(1).max(100),
+  description:   z.string().min(1).max(500),
+  category_id:   z.string().uuid(),
+  is_private:    z.boolean().optional(),
+  required_role: z.string().max(50).nullable().optional(),
+  sort_order:    z.number().int().min(0).optional(),
+});
+
+const adminBoardUpdateSchema = adminBoardCreateSchema.partial().omit({ category_id: true });
+
+/**
+ * POST /api/forum/admin/boards
+ * Create a new forum board inside an existing category. Admin only.
+ */
+router.post(
+  '/admin/boards',
+  authenticate,
+  requireAdmin,
+  validateBody(adminBoardCreateSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { name, description, category_id, is_private, required_role, sort_order } = req.body;
+      const { data, error } = await supabaseAdmin
+        .from('forum_boards')
+        .insert({
+          name, description, category_id,
+          is_private:    is_private    ?? false,
+          required_role: required_role ?? null,
+          sort_order:    sort_order    ?? 0,
+        })
+        .select('id, name, description, category_id, is_private, required_role, sort_order')
+        .single();
+
+      if (error) {
+        logger.error('Admin: create board failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to create board' });
+      }
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      logger.error('POST /forum/admin/boards error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * PUT /api/forum/admin/boards/:id
+ * Update a forum board. Admin only.
+ */
+router.put(
+  '/admin/boards/:id',
+  authenticate,
+  requireAdmin,
+  validateParams(z.object({ id: z.string().uuid() })),
+  validateBody(adminBoardUpdateSchema),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const updates: Record<string, unknown> = {};
+      if (req.body.name          !== undefined) updates.name          = req.body.name;
+      if (req.body.description   !== undefined) updates.description   = req.body.description;
+      if (req.body.is_private    !== undefined) updates.is_private    = req.body.is_private;
+      if (req.body.required_role !== undefined) updates.required_role = req.body.required_role;
+      if (req.body.sort_order    !== undefined) updates.sort_order    = req.body.sort_order;
+
+      const { data, error } = await supabaseAdmin
+        .from('forum_boards')
+        .update(updates)
+        .eq('id', id)
+        .select('id, name, description, category_id, is_private, required_role, sort_order')
+        .single();
+
+      if (error) {
+        logger.error('Admin: update board failed', { id, error });
+        return res.status(500).json({ success: false, error: 'Failed to update board' });
+      }
+      if (!data) return res.status(404).json({ success: false, error: 'Board not found' });
+      res.json({ success: true, data });
+    } catch (error) {
+      logger.error('PUT /forum/admin/boards/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/forum/admin/boards/:id
+ * Hard-delete a board (and its threads/posts). Admin only.
+ * Cascade is handled at DB level via FK constraints.
+ */
+router.delete(
+  '/admin/boards/:id',
+  authenticate,
+  requireAdmin,
+  validateParams(z.object({ id: z.string().uuid() })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { error } = await supabaseAdmin
+        .from('forum_boards')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        logger.error('Admin: delete board failed', { id, error });
+        return res.status(500).json({ success: false, error: 'Failed to delete board' });
+      }
+      res.json({ success: true, data: { id, deleted: true } });
+    } catch (error) {
+      logger.error('DELETE /forum/admin/boards/:id error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// ADMIN — Threads management (move board, force-undelete)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/forum/admin/threads
+ * List all threads (including deleted). Admin only.
+ */
+router.get(
+  '/admin/threads',
+  authenticate,
+  requireAdmin,
+  validateQuery(z.object({
+    board_id:  z.string().uuid().optional(),
+    deleted:   z.enum(['true', 'false', 'all']).optional(),
+    q:         z.string().max(200).optional(),
+    limit:     z.string().optional().transform(v => v ? parseInt(v) : 50),
+    offset:    z.string().optional().transform(v => v ? parseInt(v) : 0),
+  })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { board_id, deleted = 'all', q, limit, offset } = req.query as Record<string, string> & { limit: number; offset: number };
+
+      let query = supabaseAdmin
+        .from('forum_threads')
+        .select(`
+          id, title, created_at, updated_at, is_pinned, is_locked, deleted, deleted_at,
+          reply_count, vote_score, view_count,
+          board:board_id (id, name, category_id),
+          author:author_id (id, full_name, email)
+        `, { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (board_id) query = query.eq('board_id', board_id);
+      if (deleted === 'true')  query = query.eq('deleted', true);
+      if (deleted === 'false') query = query.eq('deleted', false);
+      if (q)                   query = query.ilike('title', `%${q}%`);
+      // 'all' = no filter
+
+      const { data, error, count } = await query;
+      if (error) {
+        logger.error('Admin: list threads failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to fetch threads' });
+      }
+      res.json({ success: true, data, meta: { total: count, limit, offset } });
+    } catch (error) {
+      logger.error('GET /forum/admin/threads error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * PATCH /api/forum/admin/threads/:id
+ * Admin-only thread updates: move to another board, change title, pin, lock, restore.
+ */
+router.patch(
+  '/admin/threads/:id',
+  authenticate,
+  requireAdmin,
+  validateParams(z.object({ id: z.string().uuid() })),
+  validateBody(z.object({
+    board_id:  z.string().uuid().optional(),
+    title:     z.string().min(1).max(200).optional(),
+    is_pinned: z.boolean().optional(),
+    is_locked: z.boolean().optional(),
+    deleted:   z.literal(false).optional(), // only false = restore
+  })),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (req.body.board_id  !== undefined) updates.board_id  = req.body.board_id;
+      if (req.body.title     !== undefined) updates.title     = req.body.title;
+      if (req.body.is_pinned !== undefined) updates.is_pinned = req.body.is_pinned;
+      if (req.body.is_locked !== undefined) updates.is_locked = req.body.is_locked;
+      if (req.body.deleted   === false)     { updates.deleted = false; updates.deleted_at = null; }
+
+      const { data, error } = await supabaseAdmin
+        .from('forum_threads')
+        .update(updates)
+        .eq('id', id)
+        .select('id, title, board_id, is_pinned, is_locked, deleted, deleted_at')
+        .single();
+
+      if (error) {
+        logger.error('Admin: patch thread failed', { id, error });
+        return res.status(500).json({ success: false, error: 'Failed to update thread' });
+      }
+      if (!data) return res.status(404).json({ success: false, error: 'Thread not found' });
+      res.json({ success: true, data });
+    } catch (error) {
+      logger.error('PATCH /forum/admin/threads/:id error', { error });
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
