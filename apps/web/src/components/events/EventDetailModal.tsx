@@ -179,8 +179,7 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
     }
   }, [event?.id, event?.user_rsvp, event?.rsvp_counts]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const doSave = async () => {
     if (!event) return;
     setEditLoading(true);
     setEditError(null);
@@ -207,6 +206,11 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
     } finally {
       setEditLoading(false);
     }
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await doSave();
   };
 
   const inputStyle: React.CSSProperties = {
@@ -373,11 +377,97 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
           {isAdmin && activeTab === 'attendees' ? (
             <EventAttendeesPanel eventId={event.id} />
           ) : activeTab === 'exhibitions' ? (
-            /* ── Exhibitions panel ── */
-            <ExhibitionsPanel
-              exhibitors={exhibitors}
-              isAdmin={isAdmin}
-            />
+            /* ── Exhibitions tab ── */
+            isEditing ? (
+              /* Admin: exhibitor editor */
+              <div>
+                {editError && <Alert variant="danger" dismissible onClose={() => setEditError(null)}>{editError}</Alert>}
+                <div className="d-flex align-items-center justify-content-between mb-3">
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#2D2D2D', fontSize: '0.95rem' }}>Manage Exhibitors</div>
+                    <div style={{ fontSize: '0.8rem', color: '#888' }}>Add companies exhibiting at this event</div>
+                  </div>
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    style={{ borderRadius: '6px', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
+                    onClick={() => setEditExhibitors(p => [...p, { company_name: '', logo_url: '', website_url: '', description: '' }])}
+                  >
+                    + Add Exhibitor
+                  </Button>
+                </div>
+
+                {editExhibitors.length === 0 && (
+                  <div className="text-center py-4" style={{ color: '#aaa', border: '2px dashed #E5E5E3', borderRadius: '10px' }}>
+                    <FiGlobe size={28} style={{ marginBottom: '0.5rem', opacity: 0.4 }} />
+                    <p style={{ margin: 0, fontSize: '0.88rem' }}>No exhibitors yet — click "+ Add Exhibitor" above.</p>
+                  </div>
+                )}
+
+                {editExhibitors.map((ex, i) => (
+                  <div key={i} className="p-3 mb-2" style={{ border: '1px solid #E5E5E3', borderRadius: '10px', background: '#FAFAF8' }}>
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#2D2D2D' }}>Exhibitor {i + 1}</span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        style={{ color: '#dc3545', padding: 0 }}
+                        onClick={() => setEditExhibitors(p => p.filter((_, idx) => idx !== i))}
+                      >
+                        <BsX size={20} />
+                      </Button>
+                    </div>
+                    <Form.Control
+                      className="mb-2"
+                      style={inputStyle}
+                      placeholder="Company name *"
+                      value={ex.company_name}
+                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, company_name: e.target.value } : x))}
+                    />
+                    <Form.Control
+                      className="mb-2"
+                      style={inputStyle}
+                      placeholder="Logo URL (https://…)"
+                      value={ex.logo_url ?? ''}
+                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, logo_url: e.target.value } : x))}
+                    />
+                    <Form.Control
+                      className="mb-2"
+                      style={inputStyle}
+                      placeholder="Website URL (https://…)"
+                      value={ex.website_url ?? ''}
+                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, website_url: e.target.value } : x))}
+                    />
+                    <Form.Control
+                      style={inputStyle}
+                      placeholder="Short description (optional)"
+                      value={ex.description ?? ''}
+                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, description: e.target.value } : x))}
+                    />
+                  </div>
+                ))}
+
+                <div className="d-flex gap-2 justify-content-end mt-3">
+                  <Button
+                    variant="outline-secondary"
+                    style={{ borderRadius: '8px' }}
+                    onClick={() => { setIsEditing(false); setEditExhibitors(exhibitors); }}
+                    disabled={editLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={editLoading || editExhibitors.some(e => !e.company_name.trim())}
+                    onClick={doSave}
+                    style={{ background: 'linear-gradient(135deg,#7a8567,#c5df96)', border: 'none', borderRadius: '8px', fontWeight: 600, minWidth: '130px', color: '#fff' }}
+                  >
+                    {editLoading ? 'Saving…' : 'Save Changes'}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <ExhibitionsPanel exhibitors={exhibitors} isAdmin={isAdmin} />
+            )
           ) : (
             <>
           {error && (
@@ -483,66 +573,6 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
                     onChange={e => { e.stopPropagation(); setEF('is_featured', e.target.checked); }}
                   />
                 </div>
-              </div>
-
-              {/* ── Exhibitors editor (admin edit form) ── */}
-              <div className="mb-4">
-                <div className="d-flex align-items-center justify-content-between mb-2">
-                  <Form.Label style={labelStyle} className="mb-0">Exhibitors</Form.Label>
-                  <Button
-                    variant="outline-secondary"
-                    size="sm"
-                    style={{ borderRadius: '6px', fontSize: '0.78rem' }}
-                    onClick={() => setEditExhibitors(p => [...p, { company_name: '', logo_url: '', website_url: '', description: '' }])}
-                  >
-                    + Add Exhibitor
-                  </Button>
-                </div>
-                {editExhibitors.length === 0 && (
-                  <p style={{ fontSize: '0.82rem', color: '#aaa', margin: 0 }}>No exhibitors yet. Click "+ Add Exhibitor" to add one.</p>
-                )}
-                {editExhibitors.map((ex, i) => (
-                  <div key={i} className="p-3 mb-2" style={{ border: '1px solid #E5E5E3', borderRadius: '8px', background: '#FAFAF8' }}>
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <span style={{ fontWeight: 600, fontSize: '0.82rem', color: '#666' }}>Exhibitor {i + 1}</span>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        style={{ color: '#dc3545', padding: 0 }}
-                        onClick={() => setEditExhibitors(p => p.filter((_, idx) => idx !== i))}
-                      >
-                        <BsX size={18} />
-                      </Button>
-                    </div>
-                    <Form.Control
-                      className="mb-2"
-                      style={inputStyle}
-                      placeholder="Company name *"
-                      value={ex.company_name}
-                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, company_name: e.target.value } : x))}
-                    />
-                    <Form.Control
-                      className="mb-2"
-                      style={inputStyle}
-                      placeholder="Logo URL (https://…)"
-                      value={ex.logo_url ?? ''}
-                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, logo_url: e.target.value } : x))}
-                    />
-                    <Form.Control
-                      className="mb-2"
-                      style={inputStyle}
-                      placeholder="Website URL (https://…)"
-                      value={ex.website_url ?? ''}
-                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, website_url: e.target.value } : x))}
-                    />
-                    <Form.Control
-                      style={inputStyle}
-                      placeholder="Short description (optional)"
-                      value={ex.description ?? ''}
-                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, description: e.target.value } : x))}
-                    />
-                  </div>
-                ))}
               </div>
 
               <div className="d-flex gap-2 justify-content-end">
