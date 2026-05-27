@@ -1,6 +1,6 @@
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, ListGroup, Spinner, Button, ProgressBar } from 'react-bootstrap';
-import { FiMessageSquare, FiUsers, FiTrendingUp, FiActivity, FiArrowRight, FiBell, FiShield, FiCalendar } from 'react-icons/fi';
+import { FiMessageSquare, FiUsers, FiTrendingUp, FiActivity, FiArrowRight, FiBell, FiShield, FiCalendar, FiEdit3 } from 'react-icons/fi';
 import { BsPeopleFill } from 'react-icons/bs';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -180,6 +180,16 @@ export default function DashboardPage() {
                   label: 'Moderation',
                   desc: 'Reports & community health',
                   gradient: 'linear-gradient(135deg,#5c7a5e,#8fbb91)',
+                }]
+              : []),
+            // Forum Admin: only visible to admins
+            ...(role === 'admin'
+              ? [{
+                  path: '/forum-admin',
+                  icon: <FiEdit3 size={26} />,
+                  label: 'Forum Admin',
+                  desc: 'Manage categories, boards & threads',
+                  gradient: 'linear-gradient(135deg,#4a6741,#7a9e6e)',
                 }]
               : []),
           ] as Array<{ path: string; icon: JSX.Element; label: string; desc: string; gradient: string }>

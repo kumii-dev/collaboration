@@ -27,6 +27,7 @@ import CategoryDetailPage from './pages/Forum/CategoryDetailPage';
 import NewThreadPage from './pages/Forum/NewThreadPage';
 import ThreadDetailPage from './pages/Forum/ThreadDetailPage';
 import ModerationPage from './pages/Moderation/ModerationPage';
+import ForumAdminPage from './pages/Dashboard/ForumAdminPage';
 import NotificationsPage from './pages/Notifications/NotificationsPage';
 import EventsPage from './pages/Events/EventsPage';
 import AdminUsersPage from './pages/Admin/AdminUsersPage';
@@ -442,6 +443,7 @@ function App() {
               <Route path="forum/new-thread" element={<NewThreadPage />} />
               <Route path="forum/threads/:threadId" element={<ThreadDetailPage />} />
               <Route path="moderation" element={<ModerationPage />} />
+              <Route path="forum-admin" element={userRole === 'admin' ? <ForumAdminPage /> : <Navigate to="/forum" replace />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="events" element={<EventsPage />} />
               <Route path="admin/users" element={<AdminUsersPage />} />
