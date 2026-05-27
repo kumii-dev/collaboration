@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Spinner, Alert, Badge, OverlayTrigger, Tooltip, Form } from 'react-bootstrap';
-import { FiChevronLeft, FiChevronRight, FiCalendar, FiUser, FiUsers, FiEye, FiEyeOff, FiRefreshCw } from 'react-icons/fi';
-import { useQuery } from 'react-query';
-import { fetchCalendarBookings, fetchBoardrooms, Booking } from '../../lib/boardroomApi';
+import { FiChevronLeft, FiChevronRight, FiCalendar, FiUser, FiUsers, FiEye, FiEyeOff, FiRefreshCw, FiPlus } from 'react-icons/fi';
+import { useQuery, useQueryClient } from 'react-query';
+import { fetchCalendarBookings, fetchBoardrooms, Booking, Boardroom } from '../../lib/boardroomApi';
+import BookingCalendarModal from './BookingCalendarModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -109,7 +110,9 @@ export default function AllBookingsCalendar() {
   const [viewMode,      setViewMode]      = useState<ViewMode>('day');
   const [hideEmpty,     setHideEmpty]     = useState<boolean>(false);
   const [nowMinutes,    setNowMinutes]    = useState<number>(nowSASTMinutes());
+  const [bookTarget,    setBookTarget]    = useState<{ room: Boardroom; date: string; slotKey: string } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
 
   // Tick the "now" line every minute
   useEffect(() => {
@@ -406,7 +409,23 @@ export default function AllBookingsCalendar() {
                     {rooms.map((room, i) => {
                       const booking = grid[room.id]?.[key];
                       const color   = ROOM_COLORS[i % ROOM_COLORS.length];
-                      if (!booking) return <div key={room.id} style={emptyCellStyle} />;
+                      if (!booking) return (
+                        <div
+                          key={room.id}
+                          title={`Book ${room.name} at ${key}`}
+                          onClick={() => setBookTarget({ room, date, slotKey: key })}
+                          style={{
+                            ...emptyCellStyle,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          className="empty-book-cell"
+                        >
+                          <FiPlus size={13} style={{ color: '#ccc', opacity: 0, transition: 'opacity 0.15s' }} className="empty-book-icon" />
+                        </div>
+                      );
 
                       const person = (booking as any).profiles;
                       const name   = person?.full_name ?? person?.email ?? 'Unknown';
@@ -535,7 +554,15 @@ export default function AllBookingsCalendar() {
                     if (isWE) return <div key={d} style={{ ...emptyCellStyle, background: '#fafafa' }} />;
 
                     const dayBook = (weekBookings[d] ?? []).filter(b => slotKeySAST(b.slot_start) === key);
-                    if (dayBook.length === 0) return <div key={d} style={emptyCellStyle} />;
+                    if (dayBook.length === 0) return (
+                      <div
+                        key={d}
+                        title={`View ${formatShortDate(d)} – ${key}`}
+                        onClick={() => { setDate(d); setViewMode('day'); }}
+                        style={{ ...emptyCellStyle, cursor: 'pointer' }}
+                        className="empty-book-cell"
+                      />
+                    );
 
                     const isT = d === todaySAST();
                     return (
@@ -592,6 +619,27 @@ export default function AllBookingsCalendar() {
           </div>
         </div>
       )}
+
+      {/* ── Booking modal (pre-navigated to the clicked date + slot) ── */}
+      {bookTarget && (
+        <BookingCalendarModal
+          show={!!bookTarget}
+          boardroom={bookTarget.room}
+          initialDate={bookTarget.date}
+          initialSASTKey={bookTarget.slotKey}
+          onHide={() => setBookTarget(null)}
+          onSuccess={() => {
+            qc.invalidateQueries(['calendar-bookings', bookTarget.date]);
+            setBookTarget(null);
+          }}
+        />
+      )}
+
+      {/* Hover-reveal "+" icon on empty cells */}
+      <style>{`
+        .empty-book-cell:hover { background: #f0f4ea !important; }
+        .empty-book-cell:hover .empty-book-icon { opacity: 1 !important; color: #7a8567 !important; }
+      `}</style>
     </div>
   );
 }
