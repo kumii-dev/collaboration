@@ -10,6 +10,8 @@ import {
   UserRole,
   saveKumiiProfile,
   loadKumiiProfile,
+  saveKumiiIdentity,
+  loadKumiiIdentity,
 } from './lib/KumiiContext';
 import { registerAppHandler } from './lib/messageBuffer';
 
@@ -85,9 +87,13 @@ function App() {
   // Pre-seed from localStorage so profile is available immediately on
   // subsequent navigations within the same iframe session.
   const cached = loadKumiiProfile();
+  const cachedIdentity = loadKumiiIdentity();
   const [kumiiProfile, setKumiiProfile] = useState<KumiiProfile | null>(cached.profile);
   const [kumiiStartup, setKumiiStartup] = useState<KumiiStartup | null>(cached.startup);
-  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [userRole,     setUserRole]     = useState<UserRole | null>(null);
+  // Display-only tags + roles forwarded by the host — null until first KUMII_IDENTITY received
+  const [kumiiTags,    setKumiiTags]    = useState<string[] | null>(cachedIdentity.tags);
+  const [kumiiRoles,   setKumiiRoles]   = useState<string[] | null>(cachedIdentity.roles);
 
   // Stable helper — fetch role from /api/auth/me using a specific token.
   // Called directly after exchange (avoids race with onAuthStateChange).
@@ -226,6 +232,18 @@ function App() {
         setKumiiProfile(p);
         setKumiiStartup(s);
         saveKumiiProfile(p, s);
+        return;
+      }
+
+      // ── KUMII_IDENTITY: display-only tags + roles from the host ──────────
+      // Re-sent on every token refresh. Never used for access control.
+      if (type === 'KUMII_IDENTITY') {
+        const t: string[] = Array.isArray(event.data?.tags)  ? event.data.tags  : [];
+        const r: string[] = Array.isArray(event.data?.roles) ? event.data.roles : [];
+        setKumiiTags(t);
+        setKumiiRoles(r);
+        saveKumiiIdentity(t, r);
+        console.log('[Kumii] KUMII_IDENTITY received — tags:', t, 'roles:', r);
         return;
       }
     };
@@ -400,7 +418,7 @@ function App() {
   }
 
   return (
-    <KumiiContext.Provider value={{ profile: kumiiProfile, startup: kumiiStartup, role: userRole }}>
+    <KumiiContext.Provider value={{ profile: kumiiProfile, startup: kumiiStartup, role: userRole, tags: kumiiTags, roles: kumiiRoles }}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>

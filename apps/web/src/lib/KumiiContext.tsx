@@ -40,14 +40,30 @@ export type UserRole = 'entrepreneur' | 'funder' | 'advisor' | 'moderator' | 'ad
 export interface KumiiContextValue {
   profile: KumiiProfile | null;
   startup: KumiiStartup | null;
-  /** Role within the collaboration platform (from /api/auth/me). null = not yet loaded. */
+  /** Authoritative platform role from /api/auth/me — used for server-side checks. */
   role: UserRole | null;
+  /**
+   * Display-only tags forwarded by the host via KUMII_IDENTITY
+   * (e.g. "joburg_sloane_connect", "gec_africa_verified", "deal_book").
+   * null = message not yet received. [] = received but user has no tags.
+   * Never use for access control — server-side only.
+   */
+  tags: string[] | null;
+  /**
+   * Display-only roles forwarded by the host via KUMII_IDENTITY
+   * (all rows from user_roles, including "admin" / "staff").
+   * null = message not yet received. [] = received but user has no extra roles.
+   * Never use for access control — server-side only.
+   */
+  roles: string[] | null;
 }
 
 export const KumiiContext = createContext<KumiiContextValue>({
   profile: null,
   startup: null,
-  role: null,
+  role:    null,
+  tags:    null,
+  roles:   null,
 });
 
 export function useKumii() {
@@ -55,8 +71,9 @@ export function useKumii() {
 }
 
 // Helpers to persist/restore across page navigations within the iframe
-const PROFILE_KEY = 'kumii_profile';
-const STARTUP_KEY = 'kumii_startup';
+const PROFILE_KEY  = 'kumii_profile';
+const STARTUP_KEY  = 'kumii_startup';
+const IDENTITY_KEY = 'kumii_identity';
 
 export function saveKumiiProfile(profile: KumiiProfile | null, startup: KumiiStartup | null) {
   try {
@@ -77,6 +94,26 @@ export function loadKumiiProfile(): { profile: KumiiProfile | null; startup: Kum
     };
   } catch {
     return { profile: null, startup: null };
+  }
+}
+
+export function saveKumiiIdentity(tags: string[], roles: string[]) {
+  try {
+    localStorage.setItem(IDENTITY_KEY, JSON.stringify({ tags, roles }));
+  } catch { /* storage blocked in some browsers */ }
+}
+
+export function loadKumiiIdentity(): { tags: string[] | null; roles: string[] | null } {
+  try {
+    const raw = localStorage.getItem(IDENTITY_KEY);
+    if (!raw) return { tags: null, roles: null };
+    const { tags, roles } = JSON.parse(raw);
+    return {
+      tags:  Array.isArray(tags)  ? tags  : null,
+      roles: Array.isArray(roles) ? roles : null,
+    };
+  } catch {
+    return { tags: null, roles: null };
   }
 }
 
