@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from 'react-query';
 import { Card, Row, Col, Badge, Button, Spinner, Form, InputGroup } from 'react-bootstrap';
 import { FiMessageSquare, FiStar, FiSearch, FiArrowRight, FiUsers, FiCalendar } from 'react-icons/fi';
@@ -8,6 +8,7 @@ import api from '../../lib/api';
 import { eventsApi, CommunityEvent } from '../../lib/eventsApi';
 import EventCard from '../../components/events/EventCard';
 import EventDetailModal from '../../components/events/EventDetailModal';
+import { useKumii } from '../../lib/KumiiContext';
 
 interface Category {
   id: string;
@@ -41,6 +42,14 @@ export default function ForumPage() {
   const [activeFilter, setActiveFilter] = useState<string>('all');
   const [selectedEvent, setSelectedEvent] = useState<CommunityEvent | null>(null);
   const navigate = useNavigate();
+
+  // Auto-redirect tagged users to their designated community
+  const { tags } = useKumii();
+  useEffect(() => {
+    if (tags?.includes('joburg_sloane_connect')) {
+      navigate('/forum/joburg-sloane-connect', { replace: true });
+    }
+  }, [tags, navigate]);
 
   // Fetch categories
   const { data: categories, isLoading: loadingCategories } = useQuery(
