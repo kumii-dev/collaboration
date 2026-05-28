@@ -8,6 +8,7 @@ import {
 import { FiExternalLink, FiGlobe } from 'react-icons/fi';
 import { type CommunityEvent, type Exhibitor, type RsvpCounts, type UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
 import EventAttendeesPanel from './EventAttendeesPanel';
+import ExhibitorLogoUpload from './ExhibitorLogoUpload';
 
 // ── Exhibitions panel (read-only display) ────────────────────────────────────
 function ExhibitionsPanel({
@@ -424,13 +425,13 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
                       value={ex.company_name}
                       onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, company_name: e.target.value } : x))}
                     />
-                    <Form.Control
-                      className="mb-2"
-                      style={inputStyle}
-                      placeholder="Logo URL (https://…)"
-                      value={ex.logo_url ?? ''}
-                      onChange={e => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, logo_url: e.target.value } : x))}
-                    />
+                    <Form.Group className="mb-2">
+                      <Form.Label style={{ ...labelStyle, fontSize: '0.78rem', marginBottom: '0.25rem' }}>Logo</Form.Label>
+                      <ExhibitorLogoUpload
+                        value={ex.logo_url}
+                        onChange={url => setEditExhibitors(p => p.map((x, idx) => idx === i ? { ...x, logo_url: url } : x))}
+                      />
+                    </Form.Group>
                     <Form.Control
                       className="mb-2"
                       style={inputStyle}

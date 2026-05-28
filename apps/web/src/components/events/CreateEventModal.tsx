@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Modal, Form, Button, Alert, Row, Col } from 'react-bootstrap';
 import { BsCalendarPlus, BsStar, BsStarFill, BsX } from 'react-icons/bs';
 import { CommunityEvent, CreateEventPayload, Exhibitor, UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
+import ExhibitorLogoUpload from './ExhibitorLogoUpload';
 
 interface Category {
   id: string;
@@ -340,13 +341,13 @@ export default function CreateEventModal({ show, onHide, categories, isAdmin, ed
                       value={ex.company_name}
                       onChange={e => setExhibitors(p => p.map((x, idx) => idx === i ? { ...x, company_name: e.target.value } : x))}
                     />
-                    <Form.Control
-                      className="mb-2"
-                      style={inputStyle}
-                      placeholder="Logo URL (https://…)"
-                      value={ex.logo_url ?? ''}
-                      onChange={e => setExhibitors(p => p.map((x, idx) => idx === i ? { ...x, logo_url: e.target.value } : x))}
-                    />
+                    <Form.Group className="mb-2">
+                      <Form.Label style={{ fontWeight: 600, color: '#2D2D2D', fontSize: '0.78rem', marginBottom: '0.25rem' }}>Logo</Form.Label>
+                      <ExhibitorLogoUpload
+                        value={ex.logo_url}
+                        onChange={url => setExhibitors(p => p.map((x, idx) => idx === i ? { ...x, logo_url: url } : x))}
+                      />
+                    </Form.Group>
                     <Form.Control
                       className="mb-2"
                       style={inputStyle}
