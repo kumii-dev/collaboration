@@ -511,9 +511,9 @@ router.post(
 
       // Insert booking as 'pending' — slot is NOT held until payment proof is submitted
       const slotEnd  = new Date(slotDate.getTime() + SLOT_DURATION_MS);
-      const isStaff  = isStaffEmail(req.user!.email);
-      // Staff (22onsloane.co) skip payment — book directly as 'confirmed'
-      // External users must go through the payment → approval flow
+      // Staff (22onsloane.co / kumii.africa) AND platform admins skip payment —
+      // booked directly as 'confirmed' with an automatic Outlook calendar invite.
+      const isStaff  = isStaffEmail(req.user!.email) || req.user!.role === 'admin';
       const initialStatus = isStaff ? 'confirmed' : 'pending';
 
       const { data: booking, error: bookingError } = await supabaseAdmin
