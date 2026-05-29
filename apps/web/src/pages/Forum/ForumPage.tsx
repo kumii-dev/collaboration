@@ -47,7 +47,7 @@ export default function ForumPage() {
   const { tags } = useKumii();
   useEffect(() => {
     if (tags?.includes('joburg_sloane_connect')) {
-      navigate('/forum/joburg-sloane-connect', { replace: true });
+      navigate('/forum/categories/joburg-sloane-connect', { replace: true });
     }
   }, [tags, navigate]);
 
