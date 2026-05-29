@@ -28,6 +28,7 @@ const createEventSchema = z.object({
   max_attendees: z.number().int().positive().optional(),
   is_online:     z.boolean().optional().default(false),
   is_featured:   z.boolean().optional().default(false),
+  cover_image_url: z.string().url().optional().or(z.literal('')),
   exhibitors:    z.array(exhibitorSchema).optional().default([]),
 });
 
@@ -41,6 +42,7 @@ const updateEventSchema = z.object({
   max_attendees: z.number().int().positive().nullable().optional(),
   is_online:     z.boolean().optional(),
   is_featured:   z.boolean().optional(),
+  cover_image_url: z.string().url().optional().or(z.literal('')),
   exhibitors:    z.array(exhibitorSchema).optional(),
 }).refine(data => Object.keys(data).length > 0, { message: 'At least one field is required' });
 

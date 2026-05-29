@@ -53,6 +53,7 @@ export interface CommunityEvent {
   is_online: boolean;
   is_cancelled: boolean;
   is_featured: boolean;
+  cover_image_url?: string;
   created_by: string;
   created_at: string;
   forum_categories?: { id: string; name: string; slug?: string };
@@ -74,6 +75,7 @@ export interface CreateEventPayload {
   max_attendees?: number;
   is_online?: boolean;
   is_featured?: boolean;
+  cover_image_url?: string;
   exhibitors?: Exhibitor[];
 }
 
@@ -88,6 +90,7 @@ export interface UpdateEventPayload {
   max_attendees?: number | null;
   is_online?: boolean;
   is_featured?: boolean;
+  cover_image_url?: string;
   exhibitors?: Exhibitor[];
 }
 

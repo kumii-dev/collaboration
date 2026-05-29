@@ -82,13 +82,19 @@ export default function EventCard({ event, onRsvpChange, onViewDetails }: Props)
       onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 16px rgba(122,133,103,.15)')}
       onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
     >
-      {/* Gradient bar */}
-      <div style={{ height: '4px', background: 'linear-gradient(90deg,#7a8567,#c5df96)' }} />
-
-      <Card.Body className="p-3 d-flex flex-column">
-        {/* Badges row */}
-        <div className="d-flex justify-content-between align-items-start mb-2">
-          <div className="d-flex gap-1 flex-wrap">
+      {/* Cover image or gradient bar */}
+      {event.cover_image_url ? (
+        <div
+          style={{ height: '160px', overflow: 'hidden', cursor: 'pointer', position: 'relative' }}
+          onClick={() => onViewDetails(event)}
+        >
+          <img
+            src={event.cover_image_url}
+            alt={event.title}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+          {/* Floating badges over the image */}
+          <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
             {event.is_featured && (
               <Badge style={{ background: 'linear-gradient(135deg,#7a8567,#c5df96)', fontSize: '0.68rem' }}>
                 ⭐ Featured
@@ -103,11 +109,44 @@ export default function EventCard({ event, onRsvpChange, onViewDetails }: Props)
             {event.is_cancelled && <Badge bg="secondary" style={{ fontSize: '0.68rem' }}>Cancelled</Badge>}
           </div>
           {event.forum_categories && (
-            <span style={{ fontSize: '0.68rem', color: '#7a8567', fontWeight: 600 }}>
+            <span style={{
+              position: 'absolute', bottom: 8, right: 8,
+              fontSize: '0.68rem', color: '#fff', fontWeight: 600,
+              background: 'rgba(0,0,0,0.45)', padding: '2px 7px', borderRadius: '10px',
+            }}>
               {event.forum_categories.name}
             </span>
           )}
         </div>
+      ) : (
+        <div style={{ height: '4px', background: 'linear-gradient(90deg,#7a8567,#c5df96)' }} />
+      )}
+
+      <Card.Body className="p-3 d-flex flex-column">
+        {/* Badges row — only shown when there is no cover image (they float over the image otherwise) */}
+        {!event.cover_image_url && (
+          <div className="d-flex justify-content-between align-items-start mb-2">
+            <div className="d-flex gap-1 flex-wrap">
+              {event.is_featured && (
+                <Badge style={{ background: 'linear-gradient(135deg,#7a8567,#c5df96)', fontSize: '0.68rem' }}>
+                  ⭐ Featured
+                </Badge>
+              )}
+              {event.is_online && (
+                <Badge style={{ background: '#7a8567', fontSize: '0.68rem' }}>
+                  <BsCameraVideo className="me-1" />Online
+                </Badge>
+              )}
+              {isFull && <Badge bg="danger" style={{ fontSize: '0.68rem' }}>Full</Badge>}
+              {event.is_cancelled && <Badge bg="secondary" style={{ fontSize: '0.68rem' }}>Cancelled</Badge>}
+            </div>
+            {event.forum_categories && (
+              <span style={{ fontSize: '0.68rem', color: '#7a8567', fontWeight: 600 }}>
+                {event.forum_categories.name}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Title */}
         <h6

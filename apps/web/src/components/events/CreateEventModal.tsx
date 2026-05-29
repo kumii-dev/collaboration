@@ -3,6 +3,7 @@ import { Modal, Form, Button, Alert, Row, Col } from 'react-bootstrap';
 import { BsCalendarPlus, BsStar, BsStarFill, BsX } from 'react-icons/bs';
 import { CommunityEvent, CreateEventPayload, Exhibitor, UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
 import ExhibitorLogoUpload from './ExhibitorLogoUpload';
+import EventImageUpload from './EventImageUpload';
 
 interface Category {
   id: string;
@@ -22,16 +23,17 @@ interface Props {
 }
 
 const INITIAL = {
-  category_id:   '',
-  title:         '',
-  description:   '',
-  location:      '',
-  meeting_url:   '',
-  starts_at:     '',
-  ends_at:       '',
-  max_attendees: '' as string,
-  is_online:     false,
-  is_featured:   false,
+  category_id:     '',
+  title:           '',
+  description:     '',
+  location:        '',
+  meeting_url:     '',
+  starts_at:       '',
+  ends_at:         '',
+  max_attendees:   '' as string,
+  is_online:       false,
+  is_featured:     false,
+  cover_image_url: '',
 };
 
 function toLocalDatetime(iso: string): string {
@@ -52,16 +54,17 @@ export default function CreateEventModal({ show, onHide, categories, isAdmin, ed
   useEffect(() => {
     if (editEvent) {
       setForm({
-        category_id:   editEvent.category_id,
-        title:         editEvent.title,
-        description:   editEvent.description ?? '',
-        location:      editEvent.location ?? '',
-        meeting_url:   editEvent.meeting_url ?? '',
-        starts_at:     toLocalDatetime(editEvent.starts_at),
-        ends_at:       editEvent.ends_at ? toLocalDatetime(editEvent.ends_at) : '',
-        max_attendees: editEvent.max_attendees != null ? String(editEvent.max_attendees) : '',
-        is_online:     editEvent.is_online,
-        is_featured:   editEvent.is_featured,
+        category_id:     editEvent.category_id,
+        title:           editEvent.title,
+        description:     editEvent.description ?? '',
+        location:        editEvent.location ?? '',
+        meeting_url:     editEvent.meeting_url ?? '',
+        starts_at:       toLocalDatetime(editEvent.starts_at),
+        ends_at:         editEvent.ends_at ? toLocalDatetime(editEvent.ends_at) : '',
+        max_attendees:   editEvent.max_attendees != null ? String(editEvent.max_attendees) : '',
+        is_online:       editEvent.is_online,
+        is_featured:     editEvent.is_featured,
+        cover_image_url: editEvent.cover_image_url ?? '',
       });
       setExhibitors(editEvent.exhibitors ?? []);
     } else {
@@ -89,8 +92,9 @@ export default function CreateEventModal({ show, onHide, categories, isAdmin, ed
           starts_at:     new Date(form.starts_at).toISOString(),
           ends_at:       form.ends_at ? new Date(form.ends_at).toISOString() : undefined,
           max_attendees: form.max_attendees ? parseInt(form.max_attendees as string) : null,
-          is_online:     form.is_online,
-          is_featured:   isAdmin ? form.is_featured : editEvent.is_featured,
+          is_online:       form.is_online,
+          is_featured:     isAdmin ? form.is_featured : editEvent.is_featured,
+          cover_image_url: form.cover_image_url || undefined,
           exhibitors,
         };
         const updated = await eventsApi.update(editEvent.id, payload);
@@ -105,8 +109,9 @@ export default function CreateEventModal({ show, onHide, categories, isAdmin, ed
           starts_at:     new Date(form.starts_at).toISOString(),
           ends_at:       form.ends_at ? new Date(form.ends_at).toISOString() : undefined,
           max_attendees: form.max_attendees ? parseInt(form.max_attendees as string) : undefined,
-          is_online:     form.is_online,
-          is_featured:   isAdmin ? form.is_featured : false,
+          is_online:       form.is_online,
+          is_featured:     isAdmin ? form.is_featured : false,
+          cover_image_url: form.cover_image_url || undefined,
           exhibitors,
         };
         const event = await eventsApi.create(payload);
@@ -176,6 +181,15 @@ export default function CreateEventModal({ show, onHide, categories, isAdmin, ed
                 onChange={e => set('title', e.target.value)}
                 placeholder="e.g. Monthly Startup Meetup"
                 required
+              />
+            </Form.Group>
+
+            {/* Cover Image */}
+            <Form.Group className="mb-3">
+              <Form.Label style={labelStyle}>Cover Image</Form.Label>
+              <EventImageUpload
+                value={form.cover_image_url}
+                onChange={url => set('cover_image_url', url)}
               />
             </Form.Group>
 

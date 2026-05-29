@@ -287,8 +287,19 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
   return (
     <Modal show={show} onHide={onHide} centered size="lg">
       <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
-        {/* Gradient bar */}
-        <div style={{ height: '6px', background: 'linear-gradient(90deg,#7a8567,#c5df96)' }} />
+        {/* Cover image OR gradient bar */}
+        {event.cover_image_url ? (
+          <div style={{ position: 'relative', height: '220px', overflow: 'hidden' }}>
+            <img
+              src={event.cover_image_url}
+              alt={event.title}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.45))' }} />
+          </div>
+        ) : (
+          <div style={{ height: '6px', background: 'linear-gradient(90deg,#7a8567,#c5df96)' }} />
+        )}
 
         <Modal.Header closeButton style={{ borderBottom: '1px solid #E5E5E3', padding: '1.25rem 1.5rem' }}>
           <div className="w-100 d-flex align-items-start justify-content-between pe-2">
