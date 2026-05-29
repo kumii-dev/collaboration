@@ -9,6 +9,7 @@ import { FiExternalLink, FiGlobe } from 'react-icons/fi';
 import { type CommunityEvent, type Exhibitor, type RsvpCounts, type UpdateEventPayload, eventsApi } from '../../lib/eventsApi';
 import EventAttendeesPanel from './EventAttendeesPanel';
 import ExhibitorLogoUpload from './ExhibitorLogoUpload';
+import EventImageUpload from './EventImageUpload';
 
 // ── Exhibitions panel (read-only display) ────────────────────────────────────
 function ExhibitionsPanel({
@@ -131,16 +132,17 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
   const [editLoading, setEditLoading] = useState(false);
   const [editError,   setEditError]   = useState<string | null>(null);
   const [editForm,    setEditForm]    = useState({
-    category_id:   '',
-    title:         '',
-    description:   '',
-    location:      '',
-    meeting_url:   '',
-    starts_at:     '',
-    ends_at:       '',
-    max_attendees: '' as string,
-    is_online:     false,
-    is_featured:   false,
+    category_id:     '',
+    title:           '',
+    description:     '',
+    location:        '',
+    meeting_url:     '',
+    starts_at:       '',
+    ends_at:         '',
+    max_attendees:   '' as string,
+    is_online:       false,
+    is_featured:     false,
+    cover_image_url: '',
   });
 
   function toLocalDatetime(iso: string): string {
@@ -164,16 +166,17 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
       setIsEditing(false);
       setEditError(null);
       setEditForm({
-        category_id:   event.category_id,
-        title:         event.title,
-        description:   event.description ?? '',
-        location:      event.location ?? '',
-        meeting_url:   event.meeting_url ?? '',
-        starts_at:     toLocalDatetime(event.starts_at),
-        ends_at:       event.ends_at ? toLocalDatetime(event.ends_at) : '',
-        max_attendees: event.max_attendees != null ? String(event.max_attendees) : '',
-        is_online:     event.is_online,
-        is_featured:   event.is_featured,
+        category_id:     event.category_id,
+        title:           event.title,
+        description:     event.description ?? '',
+        location:        event.location ?? '',
+        meeting_url:     event.meeting_url ?? '',
+        starts_at:       toLocalDatetime(event.starts_at),
+        ends_at:         event.ends_at ? toLocalDatetime(event.ends_at) : '',
+        max_attendees:   event.max_attendees != null ? String(event.max_attendees) : '',
+        is_online:       event.is_online,
+        is_featured:     event.is_featured,
+        cover_image_url: event.cover_image_url ?? '',
       });
       setExhibitors(event.exhibitors ?? []);
       setEditExhibitors(event.exhibitors ?? []);
@@ -194,9 +197,10 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
         starts_at:     new Date(editForm.starts_at).toISOString(),
         ends_at:       editForm.ends_at ? new Date(editForm.ends_at).toISOString() : undefined,
         max_attendees: editForm.max_attendees ? parseInt(editForm.max_attendees as string) : null,
-        is_online:     editForm.is_online,
-        is_featured:   editForm.is_featured,
-        exhibitors:    editExhibitors,
+        is_online:       editForm.is_online,
+        is_featured:     editForm.is_featured,
+        cover_image_url: editForm.cover_image_url || undefined,
+        exhibitors:      editExhibitors,
       };
       const updated = await eventsApi.update(event.id, payload);
       setExhibitors(updated.exhibitors ?? editExhibitors);
@@ -513,6 +517,15 @@ export default function EventDetailModal({ event, show, onHide, onRsvpChange, is
               <Form.Group className="mb-3">
                 <Form.Label style={labelStyle}>Title <span className="text-danger">*</span></Form.Label>
                 <Form.Control style={inputStyle} value={editForm.title} onChange={e => setEF('title', e.target.value)} required />
+              </Form.Group>
+
+              {/* Cover Image */}
+              <Form.Group className="mb-3">
+                <Form.Label style={labelStyle}>Cover Image</Form.Label>
+                <EventImageUpload
+                  value={editForm.cover_image_url}
+                  onChange={url => setEF('cover_image_url', url)}
+                />
               </Form.Group>
 
               {/* Description */}
