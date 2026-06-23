@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Card, Badge, Button, ButtonGroup, Spinner } from 'react-bootstrap';
-import { BsCalendarEvent, BsGeoAlt, BsCameraVideo, BsPeopleFill } from 'react-icons/bs';
+import { BsCalendarEvent, BsGeoAlt, BsCameraVideo } from 'react-icons/bs';
 import { FiClock } from 'react-icons/fi';
 import { CommunityEvent, RsvpCounts, eventsApi } from '../../lib/eventsApi';
 
@@ -185,16 +185,15 @@ export default function EventCard({ event, onRsvpChange, onViewDetails }: Props)
           </div>
         )}
 
-        {/* Counts */}
-        <div className="d-flex align-items-center gap-3 mb-3 mt-auto" style={{ fontSize: '0.76rem', color: '#666' }}>
-          <span><BsPeopleFill style={{ color: '#7a8567' }} className="me-1" />{counts.going} going</span>
-          <span>{counts.interested} interested</span>
-          {event.max_attendees && (
+        {/* Counts — show spots left only (going/interested counts hidden) */}
+        {event.max_attendees && (
+          <div className="d-flex align-items-center gap-3 mb-3 mt-auto" style={{ fontSize: '0.76rem', color: '#666' }}>
             <span style={{ color: isFull ? '#dc3545' : '#7a8567', fontWeight: 600 }}>
-              {Math.max(0, event.max_attendees - counts.going)} spots left
+              {isFull ? 'Full' : `${Math.max(0, event.max_attendees - counts.going)} spots left`}
             </span>
-          )}
-        </div>
+          </div>
+        )}
+        {!event.max_attendees && <div className="mt-auto mb-3" />}
 
         {/* RSVP buttons */}
         {!event.is_cancelled && (
