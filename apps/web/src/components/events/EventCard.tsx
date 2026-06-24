@@ -85,13 +85,13 @@ export default function EventCard({ event, onRsvpChange, onViewDetails }: Props)
       {/* Cover image or gradient bar */}
       {event.cover_image_url ? (
         <div
-          style={{ height: '160px', overflow: 'hidden', cursor: 'pointer', position: 'relative' }}
+          style={{ overflow: 'hidden', cursor: 'pointer', position: 'relative' }}
           onClick={() => onViewDetails(event)}
         >
           <img
             src={event.cover_image_url}
             alt={event.title}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            style={{ width: '100%', height: 'auto', display: 'block' }}
           />
           {/* Floating badges over the image */}
           <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
